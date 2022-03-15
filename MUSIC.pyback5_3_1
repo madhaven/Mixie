@@ -1,0 +1,157 @@
+try:
+    from os import system, sep, walk, environ
+    from os.path import isfile
+    from warnings import simplefilter
+    simplefilter('ignore') #ignores warnings
+    import sys
+except Exception as e:
+    input('Import Error : '+str(e))
+
+version = '5.3.1 db'
+musicDir = sep.join(['d:', 'music'])
+db_file = sep.join([environ['USERPROFILE'], 'Documents', 'musictags.db'])
+query_startVLC = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
+query_enque = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue '
+
+# load db from file
+tag_db = dict()
+if isfile(db_file): db = open(db_file, 'r', encoding='utf-16')
+else: db = open(db_file, 'w+', encoding='utf-16')
+exec(db.read())
+db.close()
+
+testing = False#True#
+def log(*args, wait=False, **kwargs):
+    if testing:
+        print(*args, **kwargs)
+        if wait: input()
+
+def saveTagDb(tagdict, db_file = db_file):
+    db = open(db_file, 'w+', encoding='utf-16')
+    db.write('tag_db = '+str(tagdict))
+    db.close()
+
+def printTags(li):
+    if not li: return
+    print()
+    for x in li:
+        print('%15s'%x, end='\t\t')
+    print()
+
+def reScan():
+    # fetch all files from library
+    files = {(root+sep+file).lower() for root, d, files in walk(musicDir) for file in files}
+    untaggedFiles = sorted(set(files) - set(tag_db))
+    badTags = sorted(set(tag_db) - set(files))
+
+    if untaggedFiles and 'no' not in input('\n%d untagged track(s) found, Tag them now ? '%len(untaggedFiles)).lower():
+        print('Add tags (space separated) to your tracks.\nPress Ctrl+C to exit tagging tracks\n')
+        try:
+            for i, track in enumerate(untaggedFiles):
+                if track.split('.')[-1] in ('jpg', 'ini'): continue
+                print('%5.2f%% %s'%(i*100/len(untaggedFiles), track), end=' : ')
+                system('start /b vlc.exe --one-instance --playlist-enqueue "%s"'%track)
+
+                tags = set(input().lower().split())
+                if not tags: continue
+                elif track in tag_db: tag_db[track] |= tags
+                else: tag_db[track] = tags
+                saveTagDb(tag_db)
+        except Exception as e: log(e)
+        except: pass
+        finally: print('Tagging Terminated')
+
+    if badTags and 'no' not in input('\n%d tracks were not found in library, Fix them now ? '%len(badTags)).lower():
+        print('\nDrag-n-drop new file to update track location\nPress return to forget the track\nPress Ctrl+C to exit')
+        try:
+            for i, track in enumerate(badTags):
+                print('%5.2f%% %s'%(i*100/len(badTags), track))
+                newTrack = input('drop new track : ')[1:-1].lower()
+                tag_db[newTrack] = tag_db[track]
+                tag_db.pop(track)
+                saveTagDb(tag_db)
+        except Exception as e: log(e)
+        except: pass
+        finally: print('ReTracking Terminated')
+
+def reTag(args):
+    try:
+        if not args and 'no' in input('\nSearch and correct existing track tags ? ').lower(): return
+        print('Add tags (space separated) to your tracks.\nPress return to ignore\nPress Ctrl+C to exit tagging tracks\n')
+        while True:
+            s = input('Search for a track : ').lower() if not args else ' '.join(args)
+            foundTrack = False
+            for track in tag_db:
+                if s in track:
+                    foundTrack = True
+                    print(track, ':', *tag_db[track], end=' : ')
+                    system('start /b vlc.exe --one-instance --playlist-enqueue "%s"'%track)
+
+                    tags = set(input().lower().split())
+                    if not tags: continue
+                    tag_db[track] = tags
+                    saveTagDb(tag_db)
+            if not foundTrack: print('No track was found') 
+            if args: break
+    except Exception as e: log(e)
+    except KeyboardInterrupt: pass
+    finally: print('ReTagging Terminated')
+
+def play(args):
+    system('title MUSIC %s'%version)
+
+    #gather required tags
+    if args:
+        if '-' in args: addtags = {x.lower() for x in args[:args.index('-')]}
+        else: addtags = {x.lower() for x in args}
+    else:
+        printTags(sorted({tag for track in tag_db for tag in tag_db[track]}))
+        addtags = {x.lower() for x in input("Add Songs : ").lower().split()}
+
+    PLAYLIST_PRE = {track for track in tag_db if tag_db[track] & addtags}
+
+    #gather undesired tags from selection
+    if args:
+        if '-' in args[1:]: subtags = {x.lower() for x in args[args.index('-')+1:]}
+        else: subtags = set()
+    else:
+        printTags(sorted({ tag for track in PLAYLIST_PRE for tag in tag_db[track] }))
+        subtags = {x.lower() for x in input('Remove Songs : ').lower().split()}
+
+    PLAYLIST_FIN = {track for track in PLAYLIST_PRE if not tag_db[track] & subtags}
+
+    if PLAYLIST_FIN:
+        for song in PLAYLIST_FIN: print(song)
+        if 'no' in input('\nPlay Selection ? : ').lower(): return
+
+        system(query_startVLC)
+        log(query_startVLC+"\nVLC started :\\")
+        for song in PLAYLIST_FIN:
+            system(query_enque + '"' + song + '"')
+
+def showInformation():
+    print(
+        'Music v'+version,
+        'Usage','-----',
+        'music [play] [tag] [moretags] [- [avoidtag] [moreavoidtags]]',
+        'music rescan',
+        'music retag [search_trackname_to_retag]',
+        sep='\n'
+    )
+
+if __name__=='__main__':
+    try:
+        args = [a.lower() for a in sys.argv[1:]]
+        if not args:
+            showInformation()
+        elif args[0] == 'retag':
+            reTag(args[1:])
+        elif args[0] == 'rescan':
+            reScan()
+        elif args[0] == 'play':
+            play(args[1:])
+        else:
+            play(args)
+    except KeyboardInterrupt: pass
+    except Exception as e:
+        log(e, wait=True)

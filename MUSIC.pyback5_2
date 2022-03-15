@@ -1,0 +1,135 @@
+try:
+    from stagger import read_tag
+    from os import listdir, system, sep
+    from os.path import isfile, isdir
+    from warnings import simplefilter
+    from time import sleep
+    import threading
+    import sys
+except Exception as e:
+    input('Import Error : '+str(e))
+
+simplefilter('ignore') #ignores warnings I THINK
+dirr = sep.join(['D:', 'Music'])+sep
+version = '5.2 cli infinite'
+query = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
+query2 = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue '
+
+testing = False#True#
+def log(*args, wait=False, **kwargs):
+    if testing:
+        print(*args, **kwargs)
+        if wait: input()
+
+
+class newthread(threading.Thread):
+    def __init__(self, fun, args):
+        threading.Thread.__init__(self)
+        self.fun=fun
+        self.args=args
+    def run(self):
+        self.fun(*self.args)
+
+
+def fetchfiles(dirr):
+    '''To fetch all files recursively from the directory'''
+
+    #making sure formats are okay
+    if not dirr: return None
+    elif dirr[-1] != sep: dirr = dirr + sep
+
+    #gather folders and files
+    filenames = []
+    threads = []
+    folders = [x for x in listdir(dirr) if isdir(dirr+x)]
+    try:
+        for folder in folders: #add contents of folders into files recursively
+            threads.append(newthread(filenames.extend, (fetchfiles(dirr + folder + sep),)))
+            threads[-1].start()
+        for thread in threads:
+            thread.join()
+    except Exception as e:
+        log(e, wait=True)
+
+    for x in listdir(dirr):
+        if isfile(dirr+x):
+            try: filenames.append([dirr+x, read_tag(dirr+x).comment])
+            except Exception as e: pass#print('scan issue : '+x) # making it look like Tony Stark
+            
+    return filenames
+
+
+def printtag(li):
+    print()
+    for x in li:
+        print('%15s'%x, end='\t\t')
+
+
+def main():
+
+    system('title MUSIC ' + version)
+    print('Loading . . .')
+    alltags = []
+
+    #gather all tags in collection
+    ff = fetchfiles(dirr)
+    if not testing: system('cls')
+    for file in ff: alltags.extend([x.lower() for x in file[1].split()])
+    alltags=list(set(alltags))
+    alltags.sort()
+
+    #gather required tags
+    if sys.argv[1:]:
+        if '-' in sys.argv[1:]:
+            addtags = sys.argv[1:][:sys.argv[1:].index('-')]
+        else:
+            addtags = sys.argv[1:]
+    else:
+        printtag(alltags)
+        addtags = [x.lower() for x in input("\n\nAdd Songs : ").split()]
+
+    #gather all tags included in selection
+    tags = set()
+    for file in ff:
+        if set([tag.lower() for tag in file[1].split()])&set(addtags):
+            tags |= {tag.lower() for tag in file[1].split()}
+    tags=list(tags)
+    tags.sort()
+
+    #gather undesired tags from selection
+    if sys.argv[1:]:
+        if '-' in sys.argv[1:]:
+            subtags = sys.argv[1:][sys.argv[1:].index('-')+1:]
+        else:
+            subtags = []
+    else:
+        printtag(tags)
+        subtags = [x.lower() for x in input('\n\nRemove Songs : ').split()]
+
+    #gather the playlist
+    PLAYLIST=[]
+    for file in ff:
+        if set(addtags)&set([tag.lower() for tag in file[1].split()]) and not set(subtags)&set([tag.lower() for tag in file[1].split()]):
+            PLAYLIST.append(file[0])
+    PLAYLIST.sort()
+
+    system('cls')
+    if PLAYLIST:
+        for x in PLAYLIST:
+            print(x)
+        if 'no' in input('\nPlay Selection ? : ').lower(): exit()
+
+        system(query)
+        log(query+"\nVLC started :\\")
+        # sleep(0.5) # wait for vlc to turn up
+
+        for x in PLAYLIST:
+            # log(query2 + '"' + x + '"')
+            system(query2 + '"' + x + '"')
+            
+
+
+try:
+    main()
+except Exception as e:
+    log(e, wait=True)

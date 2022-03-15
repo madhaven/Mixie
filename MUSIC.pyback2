@@ -1,0 +1,50 @@
+from staggerstuff import *
+from stagger import read_tag
+from os import listdir, system
+
+def fetchfiles(dirr):
+    '''To fetch all files recursively from the directory'''
+    if not dirr: return None
+    elif dirr[-1] != '/' and dirr[-1] != '\\': dirr=dirr+'\\'
+    
+    folders = [x for x in listdir(dirr) if len(x.split('.')) == 1]
+    filenames = [dirr+x for x in listdir(dirr) if len(x.split('.')) >= 2]
+    
+    for x in folders:
+        filenames.extend(fetchfiles(dirr+x+'\\'))
+    return filenames
+
+def fetchtags(dirr, addedtags=None):
+    '''To fetch the tags that exist in songs in the entire folder or file'''
+    tags = []
+    if not addedtags:
+        for filename in fetchfiles(dirr):
+            if filename[-3:]=='mp4' or 'desktop.ini' in filename: continue
+            try:
+                tags.extend(read_tag(filename).comment.split())
+                tags = list(set(tags))
+            except Exception as e:
+                input(str(e)+' : '+filename)
+    else:
+        for filename in fetchfiles(dirr):
+            if filename[-3:]=='mp4' or 'desktop.ini' in filename: continue
+            try:
+                file=read_tag(filename)
+                if set([x.lower() for x in addedtags])&set([x.lower() for x in file.comment.split()]):
+                    tags.extend(file.comment.split())
+                    tags = list(set(tags))
+            except Exception as e:
+                input(str(e)+' : '+filename)
+                
+    system('cls')
+    return tags
+    
+
+dirr = 'D:\\Music\\'
+query = 'start /MIN vlc %s'
+
+for tag in fetchtags(dirr): print(tag, end=' - ')
+addtags = input("\nAdd Tags : ").split()
+alltags = fetchtags(dirr, addedtags)
+tags = list(set([x.lower() for x in alltags]) - set([x.lower() for x in input(str(alltags)+"\nSubtract Tags : ").split()]))
+input(tags)
