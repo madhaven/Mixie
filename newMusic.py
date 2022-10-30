@@ -3,11 +3,12 @@ from sys import argv
 from os import sep, system, walk
 
 TESTING = True#False#
-VERSION = '5.4 arch'
-MUSIC_DIR = sep.join(['d:', 'music']) # Move to file manager
+VERSION = '6.0.0 arch'
+MUSIC_DIR = sep.join(['d:', 'music']) # TODO Move to file manager
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
 QUERY_VLC_PREVIEW = 'start /b vlc.exe --one-instance --playlist-enqueue "%s"'
+filesToAvoid = ('jpg', 'ini', 'mp4', 'wmv')
 def log(*args, wait=False, **kwargs):
     if TESTING:
         print(*args, **kwargs)
@@ -23,12 +24,18 @@ class FileManager:
 
     @staticmethod
     def getManager():
-        return BabyManager()
+        return BabyManager() # TODO: read file and select manager accordingly
 
 class BabyManager(FileManager):
 
     def load(self) -> dict:
         return dict()
+
+class MediaManager(): # TODO
+    '''Handles all interaction to a media player.'''
+    
+    def __init__(self, *args):
+        raise NotImplementedError
 
 class MixieController:
     '''handles all cli interaction'''
@@ -67,7 +74,7 @@ class MixieController:
                     if s in track:
                         foundTrack = True
                         print(track, ':', *self.mixie.db[track], end=': ')
-                        system(QUERY_VLC_PREVIEW%track) # TODO: change vlc pings to different class
+                        system(QUERY_VLC_PREVIEW%track) # TODO: change vlc pings to Media Manager
 
                         tags = input().split()
                         if not tags:
@@ -85,15 +92,54 @@ class MixieController:
         finally:
             print('ReTagging Closed')
     
-    def reScan():
+    def scan(self, *_):
         '''
         Scans the entire library and prompts tagging of untagged music.
-        If an already tagged file is misisng, prompts resetting the file location.
+        If an already tagged file is missing, prompts resetting the file location.
         '''
+        # TODO: FileManager should handle file access
         files = {
-            (root+sep+file).lower()
+            (root + sep + file).lower()
             for root, d, files in walk(MUSIC_DIR)
+            for file in files
         }
+        # TODO: Mixie should handle tag logic
+        untaggedFiles = [
+            file for file in sorted(set(files) - set(self.mixie.db))
+            if file.split('.')[-1] not in filesToAvoid]
+        badTags = sorted(set(self.mixie.db) - set(files))
+
+        if untaggedFiles and 'no' not in input('\n%d untagged track(s) found, Tag them now ? '%len(untaggedFiles)).lower():
+            print('Add tags (space separated) to your tracks.\nPress Ctrl+C to exit tagging tracks\n')
+            try:
+                for i, track in enumerate(untaggedFiles):
+                    print('%5.2f%% %s'%((i+1)*100/len(untaggedFiles), track), end=' : ')
+                    system(QUERY_VLC_PREVIEW%track) # TODO: media player should handle previewing songs
+
+                    tags = set(input().lower().split())
+                    if not tags:
+                        continue
+                    elif track in self.mixie.db:
+                        self.mixie.db[track] |= tags # TODO: mixie should handle adding of tags
+                    else:
+                        self.mixie.db[track] = tags # TODO: mixie should handle adding of tags
+                    self.mixie.saveDb() # TODO: mixie should handle adding of tags
+            except Exception as e: log(e)
+            except: pass
+            finally: print('Tagging Terminated')
+
+        if badTags and 'no' not in input('\n%d tracks were not found in library, Fix them now ? '%len(badTags)).lower():
+            print('\nDrag-n-drop new file to update track location\nPress return to forget the track\nPress Ctrl+C to exit')
+            try:
+                for i, track in enumerate(badTags):
+                    print('%5.2f%% %s'%((i+1)*100/len(badTags), track))
+                    newTrack = input('drop new track : ')[1:-1].lower()
+                    self.mixie.db[newTrack] = self.mixie.db[track] # TODO: mixie should handle adding of tags
+                    self.mixie.db.pop(track)
+                    self.mixie.saveDb() # TODO: mixie should handle adding of tags
+            except Exception as e: log(e)
+            except: pass
+            finally: print('ReTracking Terminated')
     
     def playSpecific(self, *args):
         trackName = input('Song to play : ') if not args else ' '.join(args)
@@ -104,15 +150,12 @@ class MixieController:
             'Music v%s'%VERSION,
             'Usage','-----',
             'music [tag] [moretags] [- [avoidtag] [moreavoidtags]]',
-            'music play trackname'
-            'music rescan',
+            'music play trackname',
+            'music scan',
             'music retag [search_trackname_to_retag]',
             'music alltags',
             sep='\n'
         )
-    
-    def showAllTags(self):
-        self.showTags(self.mixie.allTags())
     
     def mix(self, *args):
         if not args:
@@ -134,17 +177,13 @@ class MixieController:
         for song in playlist:
             system(QUERY_VLC_ENQUE%song)
     
+    def showAllTags(self):
+        self.showTags(self.mixie.allTags())
+    
     def showTags(self, tags):
         if not tags:
             return
-        print()
-        for tag in tags:
-            print('%15s'%tag, end='\t\t')
-        print()
-    
-    def scan(self, *_):
-        '''scans the library/libraries for missing / new songs'''
-        raise NotImplementedError
+        print('\n', *['%15s'%tag for tag in tags], sep='\t\t', end='\n')
 
 class Mixie:
     '''contains the logic to handle processes'''
@@ -192,7 +231,7 @@ class Mixie:
 
 if __name__ == '__main__':
     cliArgs = [arg.lower() for arg in argv][1:]
-    log(cliArgs)
-    fileManager = FileManager.getManager()
+    log('cliArgs:', cliArgs)
+    fileManager = FileManager.getManager() # TODO should handle creation of file if it doesn't exist
     controller = MixieController(fileManager=fileManager)
     controller.main(cliArgs)
