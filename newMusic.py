@@ -1,10 +1,10 @@
 from abc import abstractmethod
 from sys import argv
-from os import sep, system, walk
+from os import sep, system, walk, environ
+from os.path import isfile
 
 TESTING = True#False#
 VERSION = '6.0.0 arch'
-MUSIC_DIR = sep.join(['d:', 'music']) # TODO Move to file manager
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
 QUERY_VLC_PREVIEW = 'start /b vlc.exe --one-instance --playlist-enqueue "%s"'
@@ -18,18 +18,56 @@ class FileManager:
     '''handles the save and load of Mixie data'''
 
     @abstractmethod
-    def load(self) -> dict:
-        '''loads the db from file.'''
+    def __init__(self, libraryLocation, dbFile):
+        # call super().__init__() while overriding this init
+        self.NAME = self.__name__
+        self.libraryLocation = libraryLocation
+        self.dbFile = dbFile
+
+    @abstractmethod
+    def getTags(self) -> dict:
+        '''reads the db and returns the resultant dictionary'''
         raise NotImplementedError
 
     @staticmethod
     def getManager():
-        return BabyManager() # TODO: read file and select manager accordingly
 
-class BabyManager(FileManager):
+        if False:
+            # TODO logic for creating initiating stuff if documents don't contain file
+            pass
+        else:
+            # TODO access data from documents
+            libraryLocation = sep.join(['d:', 'music'])
+            dbLocation = sep.join([environ['USERPROFILE'], 'Documents', 'musictags.db'])
+            # TODO: read file and select manager accordingly
+            fileManager = BabyFileManager(libraryLocation, dbLocation)
 
-    def load(self) -> dict:
-        return dict()
+        return fileManager
+
+class BabyFileManager(FileManager):
+
+    def __init__(self, libraryLocation, dbLocation):
+        super().__init__(libraryLocation, dbLocation)
+
+    def getTags(self) -> dict:
+        '''reads the db and returns the resultant dictionary'''
+
+        if isfile(self.dbFile):
+            db = open(self.dbFile, 'r', encoding='utf-16')
+        else:
+            db = open(self.dbFile, 'w+', encoding='utf-16')
+            
+        content = db.read()
+        db.close()
+        TAG_DB = dict() # TODO change the hardcoded name 
+        exec(content) # TODO this is a vulnerability.
+        return TAG_DB
+    
+    def saveTagDb(self, tagdict):
+        db = open(self.dbFile, 'w+', encoding='utf-16')
+        db.write('TAG_DB = '+str(tagdict)) # TODO change the hardcoded name
+        db.close()
+        log('tagDb saved')
 
 class MediaManager(): # TODO
     '''Handles all interaction to a media player.'''
@@ -100,7 +138,7 @@ class MixieController:
         # TODO: FileManager should handle file access
         files = {
             (root + sep + file).lower()
-            for root, d, files in walk(MUSIC_DIR)
+            for root, d, files in walk(filemanager.libraryLocation)
             for file in files
         }
         # TODO: Mixie should handle tag logic
@@ -189,7 +227,7 @@ class Mixie:
     '''contains the logic to handle processes'''
 
     def __init__(self, fileManager:FileManager, controller:MixieController):
-        self.db = fileManager.load()
+        self.db = fileManager.getTags()
         self.controller = controller
     
     def playSpecific(self, songName):
