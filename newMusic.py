@@ -8,7 +8,7 @@ VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
 QUERY_VLC_PREVIEW = 'start /b vlc.exe --one-instance --playlist-enqueue "%s"'
-filesToAvoid = ('jpg', 'ini', 'mp4', 'wmv')
+NON_MUSIC_FILES = ('jpg', 'ini', 'mp4', 'wmv')
 def log(*args, wait=False, **kwargs):
     if TESTING:
         print(*args, **kwargs)
@@ -20,14 +20,27 @@ class FileManager:
     @abstractmethod
     def __init__(self, libraryLocation, dbFile):
         # call super().__init__() while overriding this init
-        self.NAME = self.__name__
         self.libraryLocation = libraryLocation
         self.dbFile = dbFile
 
     @abstractmethod
-    def getTags(self) -> dict:
+    def load(self) -> dict:
         '''reads the db and returns the resultant dictionary'''
         raise NotImplementedError
+    
+    @abstractmethod
+    def saveTagDb(self, tagDict:dict):
+        '''saves the provided dictionary to the file.'''
+        raise NotImplementedError
+    
+    def getFilesInLibrary(self, avoidNonMusic=True) -> set:
+        '''walks through the file tree with `os.walk` and returns a set of all files included'''
+        return {
+            (root + sep + file).lower()
+            for root, _, files in walk(self.libraryLocation)
+            for file in files
+            if avoidNonMusic and file.split('.')[-1] not in NON_MUSIC_FILES
+        }
 
     @staticmethod
     def getManager():
@@ -49,7 +62,7 @@ class BabyFileManager(FileManager):
     def __init__(self, libraryLocation, dbLocation):
         super().__init__(libraryLocation, dbLocation)
 
-    def getTags(self) -> dict:
+    def load(self) -> dict:
         '''reads the db and returns the resultant dictionary'''
 
         if isfile(self.dbFile):
@@ -64,6 +77,7 @@ class BabyFileManager(FileManager):
         return TAG_DB
     
     def saveTagDb(self, tagdict):
+        '''saves the provided dictionary to the file in string format'''
         db = open(self.dbFile, 'w+', encoding='utf-16')
         db.write('TAG_DB = '+str(tagdict)) # TODO change the hardcoded name
         db.close()
@@ -71,6 +85,15 @@ class BabyFileManager(FileManager):
 
 class MediaManager(): # TODO
     '''Handles all interaction to a media player.'''
+
+    def __init__(self):
+        '''maintains a state of the player'''
+        # call super().__init__() while overriding this init
+        self.state = 'nonInitialized'
+    
+    @abstractmethod
+    def previewTrack(self, track):
+        raise NotImplementedError
     
     def __init__(self, *args):
         raise NotImplementedError
@@ -93,7 +116,7 @@ class MixieController:
             elif command == 'scan':
                 self.scan(*args[1:])
             elif command == 'retag':
-                self.retag(*args[1:])
+                self.tag(*args[1:])
             elif command == 'version':
                 self.showInfo()
             elif command == 'alltags':
@@ -101,70 +124,48 @@ class MixieController:
             else:
                 self.mix(*args)
     
-    def retag(self, *args):
-        '''edits tags of songs matching the keyword'''
-        print('Add tags (space separated) to your tracks.\nPress return to skip\nPress Ctrl+C to exit tagging tracks\n')
+    def tag(self, *args):
+        '''Facilitates input and output'''
         try:
-            while True:
-                s = input('Search for a track: ').lower() if not args else ' '.join(args)
-                foundTrack = False
-                for track in self.mixie.db: # TODO: replace direct access to db
-                    if s in track:
-                        foundTrack = True
-                        print(track, ':', *self.mixie.db[track], end=': ')
-                        system(QUERY_VLC_PREVIEW%track) # TODO: change vlc pings to Media Manager
-
-                        tags = input().split()
-                        if not tags:
-                            continue
-                        self.mixie.reTag(track, tags)
-                        self.mixie.saveDb()
-                if not foundTrack:
-                    print('No such track found')
-                if args:
-                    break
+            print('Add tags (space separated) to your tracks.\nPress return to skip\nPress Ctrl+C to exit tagging tracks\n')                
+            search_key = (input('Search for a track: ') if not args else ' '.join(args)).lower()
+            
+            tracks = self.mixie.findTracks(search_key)
+            if not tracks:
+                print('No such track found')
+            
+            for track in tracks:
+                print(track, ':', *self.mixie.tagsOfTrack(track), end=': ')
+                system(QUERY_VLC_PREVIEW%track) # TODO: change vlc pings to Media Manager
+                tags = set(input().lower().split())
+                self.mixie.tag(track, tags)
         except KeyboardInterrupt:
             pass
         except Exception as e:
             log(e)
         finally:
-            print('ReTagging Closed')
+            print('ReTagging Terminated')
     
     def scan(self, *_):
         '''
-        Scans the entire library and prompts tagging of untagged music.
-        If an already tagged file is missing, prompts resetting the file location.
+        CLI for scan operations
         '''
-        # TODO: FileManager should handle file access
-        files = {
-            (root + sep + file).lower()
-            for root, d, files in walk(filemanager.libraryLocation)
-            for file in files
-        }
-        # TODO: Mixie should handle tag logic
-        untaggedFiles = [
-            file for file in sorted(set(files) - set(self.mixie.db))
-            if file.split('.')[-1] not in filesToAvoid]
-        badTags = sorted(set(self.mixie.db) - set(files))
-
+        untaggedFiles, badTags = self.mixie.scan()
+        # TODO: add functionality to remove tags
         if untaggedFiles and 'no' not in input('\n%d untagged track(s) found, Tag them now ? '%len(untaggedFiles)).lower():
             print('Add tags (space separated) to your tracks.\nPress Ctrl+C to exit tagging tracks\n')
             try:
                 for i, track in enumerate(untaggedFiles):
                     print('%5.2f%% %s'%((i+1)*100/len(untaggedFiles), track), end=' : ')
                     system(QUERY_VLC_PREVIEW%track) # TODO: media player should handle previewing songs
-
                     tags = set(input().lower().split())
-                    if not tags:
-                        continue
-                    elif track in self.mixie.db:
-                        self.mixie.db[track] |= tags # TODO: mixie should handle adding of tags
-                    else:
-                        self.mixie.db[track] = tags # TODO: mixie should handle adding of tags
-                    self.mixie.saveDb() # TODO: mixie should handle adding of tags
-            except Exception as e: log(e)
-            except: pass
-            finally: print('Tagging Terminated')
+                    self.mixie.tag(track, tags)
+            except KeyboardInterrupt:
+                pass
+            except Exception as e:
+                log(e)
+            finally:
+                print('Tagging Terminated')
 
         if badTags and 'no' not in input('\n%d tracks were not found in library, Fix them now ? '%len(badTags)).lower():
             print('\nDrag-n-drop new file to update track location\nPress return to forget the track\nPress Ctrl+C to exit')
@@ -172,9 +173,7 @@ class MixieController:
                 for i, track in enumerate(badTags):
                     print('%5.2f%% %s'%((i+1)*100/len(badTags), track))
                     newTrack = input('drop new track : ')[1:-1].lower()
-                    self.mixie.db[newTrack] = self.mixie.db[track] # TODO: mixie should handle adding of tags
-                    self.mixie.db.pop(track)
-                    self.mixie.saveDb() # TODO: mixie should handle adding of tags
+                    self.mixie.replaceTrack(track, newTrack)
             except Exception as e: log(e)
             except: pass
             finally: print('ReTracking Terminated')
@@ -227,20 +226,11 @@ class Mixie:
     '''contains the logic to handle processes'''
 
     def __init__(self, fileManager:FileManager, controller:MixieController):
-        self.db = fileManager.getTags()
+        self.fileManager = fileManager
         self.controller = controller
+        self.db = self.fileManager.load()
+        log('DB loaded')
     
-    def playSpecific(self, songName):
-        '''cooks the playlist depending on song matching a keyword'''
-        playlist = {track for track in self.db if songName in track}
-        if playlist:
-            self.loadPlaylist(playlist)
-    
-    def allTags(self):
-        '''returns a sorted list of all the tags used across the library'''
-        return sorted({tag for track in self.db for tag in self.db[track]})
-        # printTags(sorted({tag for track in TAG_DB for tag in TAG_DB[track]}))
-
     def mix(self, addtags, subtags):
         '''cooks the playlist from the choice of tags'''
         # prePlaylist = {track for track in self.db if self.db[track] & addtags}
@@ -258,14 +248,64 @@ class Mixie:
         for song in playlist:
             system(QUERY_VLC_ENQUE%song)
     
-    def reTag(self, songName:str, tags:list):
-        '''updates the tags of the specified file'''
-        if songName in self.db:
-            self.db[songName] = set([tag.lower() for tag in tags])
+    def playSpecific(self, songName):
+        '''cooks the playlist depending on song matching a keyword'''
+        playlist = {track for track in self.db if songName in track}
+        if playlist:
+            self.loadPlaylist(playlist)
+    
+    def findTracks(self, searchKey:str):
+        '''returns a list of tracks that match the searchKey'''
+        if not searchKey:
+            return []
+        else:
+            return [
+                track for track in sorted(self.db)
+                if searchKey in track]
+    
+    def allTags(self):
+        '''returns a sorted list of all the tags used across the library'''
+        # printTags(sorted({tag for track in TAG_DB for tag in TAG_DB[track]}))
+        return sorted({tag for track in self.db for tag in self.db[track]})
+    
+    def tagsOfTrack(self, track):
+        return self.db[track] if track in self.db else []
+    
+    def scan(self):
+        '''
+        Scans the entire library and returns two sets.\n  
+        One containing files that are not tagged\n  
+        The other containing files that were tagged but don't exist in the right location.  
+        '''
+        files:set = self.fileManager.getFilesInLibrary() # TODO: make options for multiple library locations
+        untaggedFiles = [file for file in sorted(files - set(self.db))]
+        badTags = sorted(set(self.db) - set(files))
+        return untaggedFiles, badTags
+
+    def tag(self, track:str, newTags:set, keepOldTag=False):
+        '''edits tags of song'''
+        if newTags:
+            newTags = {tag.lower() for tag in newTags}
+            if keepOldTag:
+                self.db[track] |= newTags
+            else:
+                self.db[track] = newTags
+            self.saveDb()
+
+    def replaceTrack(self, oldTrack:str, newTrack:str):
+        if (oldTrack in self.db) and (oldTrack!=newTrack):
+            self.db[newTrack] = self.db[oldTrack]
+            self.forgetTrack(oldTrack)
+    
+    def forgetTrack(self, track:str):
+        '''removes all tags and existence of a track from memory'''
+        if track in self.db:
+            self.db.pop(track)
+            self.saveDb()
     
     def saveDb(self):
-        '''saves db to file'''
-        raise NotImplementedError
+        '''makes fileManager save db to file'''
+        self.fileManager.saveTagDb(self.db)
 
 if __name__ == '__main__':
     cliArgs = [arg.lower() for arg in argv][1:]
