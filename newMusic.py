@@ -7,7 +7,7 @@ TESTING = True#False#
 VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
-QUERY_VLC_PREVIEW = 'start /b vlc.exe --one-instance --playlist-enqueue "%s"'
+QUERY_VLC_PREVIEW = 'start /b vlc.exe --playlist-enqueue "%s"'
 NON_MUSIC_FILES = ('jpg', 'ini', 'mp4', 'wmv')
 def log(*args, wait=False, **kwargs):
     if TESTING:
@@ -242,10 +242,11 @@ class Mixie:
         if playlist:
             self.loadPlaylist(playlist) # TODO add media manager here
     
-    def loadPlaylist(playlist): # TODO mediaManager should handle this
+    def loadPlaylist(self, playlist): # TODO mediaManager should handle this
         system(QUERY_VLC_START)
         log(QUERY_VLC_START+'\nVLC started :\\')
         for song in playlist:
+            log(QUERY_VLC_ENQUE%song)
             system(QUERY_VLC_ENQUE%song)
     
     def playSpecific(self, songName):
