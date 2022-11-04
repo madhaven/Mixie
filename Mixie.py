@@ -1,7 +1,8 @@
+import sqlite3 as sql
 from abc import abstractmethod
-from sys import argv
-from os import sep, system, walk, environ
+from os import environ, sep, system, walk
 from os.path import isfile
+from sys import argv
 
 TESTING = True#False#
 VERSION = '6.0.0 arch'
@@ -33,6 +34,11 @@ class FileManager:
         '''saves the provided dictionary to the file.'''
         raise NotImplementedError
     
+    @abstractmethod
+    def getSongsWithTags(self, tags:list, matchAll=False):
+        '''returns a list of tracks that contain any/all of the tags in the list provided'''
+        raise NotImplementedError
+    
     def getFilesInLibrary(self, avoidNonMusic=True) -> set:
         '''walks through the file tree with `os.walk` and returns a set of all files included'''
         return {
@@ -61,6 +67,40 @@ class BabyFileManager(FileManager):
 
     def __init__(self, libraryLocation, dbLocation):
         super().__init__(libraryLocation, dbLocation)
+    
+    def setupDB(self, con=None):
+        '''initialize tables'''
+        if not con:
+            con2, cur = self._connect_()
+        cur.execute("CREATE TABLE IF NOT EXISTS song(id, location, songname)")
+        cur.execute("CREATE TABLE IF NOT EXISTS tag(id, tagname)")
+        cur.execute("CREATE TABLE IF NOT EXISTS link(songid, tagid)")
+        if not con:
+            con2.commit()
+            con2.close()
+    
+    def _connect_(self):
+        '''Sets up the db if not used and returns the Connection and Cursor for operations'''
+        con:sql.Connection = sql.connect(self.dbFile)
+        if isfile(self.dbfile):
+            cur = con.cursor()
+        else:
+            self.setupDB(con)
+        return con, cur
+    
+    def getSongsWithTags(self, tags:list, matchAll):
+        '''returns a records of songs which contain the tags'''
+        con, cur = self._connect_()
+        tags = ', '.join(["'%s'"%tag for tag in tags])
+        if matchAll:
+            raise NotImplementedError # TODO
+        else:
+            query = "SELECT songname from song s INNER JOIN link l on s.id=l.songid WHERE l.tagid IN (SELECT id from tag WHERE tagname IN (%s))"%tags
+        cur.execute(query)
+        log(query)
+        res = cur.fetchall()
+        print(res)
+        return res
 
     def load(self) -> dict:
         '''reads the db and returns the resultant dictionary'''
@@ -72,8 +112,8 @@ class BabyFileManager(FileManager):
             
         content = db.read()
         db.close()
-        TAG_DB = dict() # TODO change the hardcoded name 
-        exec(content) # TODO this is a vulnerability.
+        TAG_DB = dict() # TODO change the hardcoded name
+        exec(content) # TODO this is a vulnerability
         return TAG_DB
     
     def saveTagDb(self, tagdict):
@@ -228,17 +268,17 @@ class Mixie:
     def __init__(self, fileManager:FileManager, controller:MixieController):
         self.fileManager = fileManager
         self.controller = controller
-        self.db = self.fileManager.load()
-        log('DB loaded')
     
     def mix(self, addtags, subtags):
         '''cooks the playlist from the choice of tags'''
-        # prePlaylist = {track for track in self.db if self.db[track] & addtags}
-        # finalPlaylist = {track for track in prePlaylist if not self.db[track] & subtags}
+        prePlaylist = {track for track in self.db if self.db[track] & addtags}
+        finalPlaylist = {track for track in prePlaylist if not self.db[track] & subtags}
         playlist = {
             track for track in self.db
             if self.db[track] & addtags and not self.db[track] & subtags
-        }
+        } # TODO: get rid of these
+
+        self.fileManager.getSongsWithTags(addtags)
         if playlist:
             self.loadPlaylist(playlist) # TODO add media manager here
     
