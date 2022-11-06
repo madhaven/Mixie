@@ -9,13 +9,13 @@ VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
 QUERY_VLC_PREVIEW = 'start /b vlc.exe --playlist-enqueue "%s"'
-NON_MUSIC_FILES = ('jpg', 'ini', 'mp4', 'wmv')
 def log(*args, wait=False, **kwargs):
     if TESTING:
         print(*args, **kwargs)
         if wait: input()
 
 class FileManager:
+    NON_MUSIC_FILES = ('jpg', 'ini', 'mp4', 'wmv')
     '''handles the save and load of Mixie data'''
 
     @abstractmethod
@@ -23,20 +23,22 @@ class FileManager:
         # call super().__init__() while overriding this init
         self.libraryLocation = libraryLocation
         self.dbFile = dbFile
+        if TESTING:
+            self.dbFile = 'mixie.db'
+    
+    @abstractmethod
+    def getSongs(self, tags:list, matchAll=False):
+        '''returns a list of tracks that contain any/all of the tags in the list provided'''
+        raise NotImplementedError
 
     @abstractmethod
-    def load(self) -> dict:
-        '''reads the db and returns the resultant dictionary'''
-        raise NotImplementedError
+    def tagsOfTrack(self, trackName):
+        '''returns a list of tags associated to a track'''
+        raise NotImplementedError # todo change implementation to trackid
     
     @abstractmethod
-    def saveTagDb(self, tagDict:dict):
-        '''saves the provided dictionary to the file.'''
-        raise NotImplementedError
-    
-    @abstractmethod
-    def getSongsWithTags(self, tags:list, matchAll=False):
-        '''returns a list of tracks that contain any/all of the tags in the list provided'''
+    def getSongsFromSearch(self, keyword:str):
+        '''returns a list of track that contain the keyword in their full file name.'''
         raise NotImplementedError
     
     def getFilesInLibrary(self, avoidNonMusic=True) -> set:
@@ -45,8 +47,13 @@ class FileManager:
             (root + sep + file).lower()
             for root, _, files in walk(self.libraryLocation)
             for file in files
-            if avoidNonMusic and file.split('.')[-1] not in NON_MUSIC_FILES
+            if avoidNonMusic and file.split('.')[-1] not in self.NON_MUSIC_FILES
         }
+    
+    @abstractmethod
+    def getFilesInDb(self) -> set:
+        '''walks through the db and returns a set of all files included'''
+        raise NotImplementedError
 
     @staticmethod
     def getManager():
@@ -68,60 +75,72 @@ class BabyFileManager(FileManager):
     def __init__(self, libraryLocation, dbLocation):
         super().__init__(libraryLocation, dbLocation)
     
-    def setupDB(self, con=None):
+    def setupDB(self, con:sql.Connection=None):
         '''initialize tables'''
         if not con:
             con2, cur = self._connect_()
+        else:
+            cur = con.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS song(id, location, songname)")
         cur.execute("CREATE TABLE IF NOT EXISTS tag(id, tagname)")
         cur.execute("CREATE TABLE IF NOT EXISTS link(songid, tagid)")
         if not con:
             con2.commit()
             con2.close()
+        else:
+            con.commit()
     
     def _connect_(self):
-        '''Sets up the db if not used and returns the Connection and Cursor for operations'''
-        con:sql.Connection = sql.connect(self.dbFile)
-        if isfile(self.dbfile):
-            cur = con.cursor()
-        else:
+        '''Sets up the db if not used and returns the Connection and Cursor for operations.\n
+        `.close()` should be called on the connection after operations'''
+        if not isfile(self.dbFile):
+            con:sql.Connection = sql.connect(self.dbFile)
             self.setupDB(con)
+        else:
+            con:sql.Connection = sql.connect(self.dbFile)
+        cur = con.cursor()
         return con, cur
     
-    def getSongsWithTags(self, tags:list, matchAll):
+    def getSongs(self, tags:list, avoidList:list=None, matchAll=False):
         '''returns a records of songs which contain the tags'''
         con, cur = self._connect_()
         tags = ', '.join(["'%s'"%tag for tag in tags])
+        avoidList = ', '.join(["'%s'"%tag for tag in avoidList]) if avoidList else ''
         if matchAll:
             raise NotImplementedError # TODO
-        else:
-            query = "SELECT songname from song s INNER JOIN link l on s.id=l.songid WHERE l.tagid IN (SELECT id from tag WHERE tagname IN (%s))"%tags
+        query = '''
+SELECT location, songname FROM song s INNER JOIN link l ON s.id=l.songid INNER JOIN tag t ON l.tagid=t.id WHERE t.tagname IN (%s)
+EXCEPT
+SELECT location, songname FROM song s INNER JOIN link l ON s.id=l.songid INNER JOIN tag t ON l.tagid=t.id WHERE t.tagname IN (%s)
+        '''%(tags, avoidList)
         cur.execute(query)
-        log(query)
         res = cur.fetchall()
-        print(res)
+        con.close()
         return res
-
-    def load(self) -> dict:
-        '''reads the db and returns the resultant dictionary'''
-
-        if isfile(self.dbFile):
-            db = open(self.dbFile, 'r', encoding='utf-16')
-        else:
-            db = open(self.dbFile, 'w+', encoding='utf-16')
-            
-        content = db.read()
-        db.close()
-        TAG_DB = dict() # TODO change the hardcoded name
-        exec(content) # TODO this is a vulnerability
-        return TAG_DB
     
-    def saveTagDb(self, tagdict):
-        '''saves the provided dictionary to the file in string format'''
-        db = open(self.dbFile, 'w+', encoding='utf-16')
-        db.write('TAG_DB = '+str(tagdict)) # TODO change the hardcoded name
-        db.close()
-        log('tagDb saved')
+    def tagsOfTrack(self, trackName):
+        con, cur = self._connect_()
+        query = '''SELECT tagname FROM tag IF id IN (SELECT tagid FROM song s INNER JOIN link l ON s.id=l.songid WHERE songname = ?)'''
+        cur.execute(query, (trackName,))
+        con.close()
+        return
+    
+    def getSongsFromSearch(self, keyword: str):
+        '''returns songs with the keyword in their full address'''
+        con, cur = self._connect_()
+        query = '''SELECT location, songname FROM song WHERE location like '%%%s%%' OR songname like '%%%s%%' '''%(keyword, keyword)
+        cur.execute(query)
+        res = cur.fetchall()
+        con.close()
+        return res
+    
+    def getFilesInDb(self):
+        con, cur = self._connect_()
+        query = '''SELECT location, songname from song'''
+        cur.execute(query)
+        res = cur.fetchall()
+        con.close()
+        return {location + track for location, track in res}
 
 class MediaManager(): # TODO
     '''Handles all interaction to a media player.'''
@@ -224,13 +243,13 @@ class MixieController:
     
     def showInfo(self):
         print(
-            'Music v%s'%VERSION,
+            'Mixie v%s'%VERSION,
             'Usage','-----',
-            'music [tag] [moretags] [- [avoidtag] [moreavoidtags]]',
-            'music play trackname',
-            'music scan',
-            'music retag [search_trackname_to_retag]',
-            'music alltags',
+            'mixie [tag] [moretags] [- [avoidtag] [moreavoidtags]]',
+            'mixie play trackname',
+            'mixie scan',
+            'mixie retag [search_trackname_to_retag]',
+            'mixie alltags',
             sep='\n'
         )
     
@@ -271,14 +290,8 @@ class Mixie:
     
     def mix(self, addtags, subtags):
         '''cooks the playlist from the choice of tags'''
-        prePlaylist = {track for track in self.db if self.db[track] & addtags}
-        finalPlaylist = {track for track in prePlaylist if not self.db[track] & subtags}
-        playlist = {
-            track for track in self.db
-            if self.db[track] & addtags and not self.db[track] & subtags
-        } # TODO: get rid of these
-
-        self.fileManager.getSongsWithTags(addtags)
+        tracks = self.fileManager.getSongs(addtags, subtags)
+        playlist = [location+track for location, track in tracks]
         if playlist:
             self.loadPlaylist(playlist) # TODO add media manager here
     
@@ -291,18 +304,18 @@ class Mixie:
     
     def playSpecific(self, songName):
         '''cooks the playlist depending on song matching a keyword'''
-        playlist = {track for track in self.db if songName in track}
+        playlist = self.findTracks(songName)
         if playlist:
             self.loadPlaylist(playlist)
     
-    def findTracks(self, searchKey:str):
-        '''returns a list of tracks that match the searchKey'''
+    def findTracks(self, searchKey:str) -> set:
+        '''returns a set of tracks that match the searchKey'''
         if not searchKey:
-            return []
+            return set()
         else:
-            return [
-                track for track in sorted(self.db)
-                if searchKey in track]
+            return {
+                location + track
+                for location, track in self.fileManager.getSongsFromSearch(searchKey)}
     
     def allTags(self):
         '''returns a sorted list of all the tags used across the library'''
@@ -310,17 +323,19 @@ class Mixie:
         return sorted({tag for track in self.db for tag in self.db[track]})
     
     def tagsOfTrack(self, track):
-        return self.db[track] if track in self.db else []
+        tags = self.fileManager.tagsOfTrack(track)
+        return {tag for tag in tags}
     
     def scan(self):
         '''
         Scans the entire library and returns two sets.\n  
         One containing files that are not tagged\n  
-        The other containing files that were tagged but don't exist in the right location.  
+        The other containing files that were tagged but don't exist in the saved location.  
         '''
-        files:set = self.fileManager.getFilesInLibrary() # TODO: make options for multiple library locations
-        untaggedFiles = [file for file in sorted(files - set(self.db))]
-        badTags = sorted(set(self.db) - set(files))
+        filesInLib:set = self.fileManager.getFilesInLibrary() # TODO: make options for multiple library locations
+        filesInDB:set = self.fileManager.getFilesInDb()
+        untaggedFiles = sorted(filesInLib - filesInDB)
+        badTags = sorted(filesInDB - filesInLib)
         return untaggedFiles, badTags
 
     def tag(self, track:str, newTags:set, keepOldTag=False):
