@@ -4,7 +4,7 @@ from os import environ, sep, system, walk
 from os.path import isfile
 from sys import argv
 
-TESTING = True#False#
+TESTING = False#True#
 VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
@@ -25,18 +25,13 @@ class FileManager:
         self.dbFile = dbFile
 
     @abstractmethod
-    def load(self) -> dict:
+    def loadDB(self) -> dict:
         '''reads the db and returns the resultant dictionary'''
         raise NotImplementedError
     
     @abstractmethod
-    def saveTagDb(self, tagDict:dict):
+    def saveDB(self, tagDict:dict):
         '''saves the provided dictionary to the file.'''
-        raise NotImplementedError
-    
-    @abstractmethod
-    def getSongsWithTags(self, tags:list, matchAll=False):
-        '''returns a list of tracks that contain any/all of the tags in the list provided'''
         raise NotImplementedError
     
     def getFilesInLibrary(self, avoidNonMusic=True) -> set:
@@ -50,7 +45,6 @@ class FileManager:
 
     @staticmethod
     def getManager():
-
         if False:
             # TODO logic for creating initiating stuff if documents don't contain file
             pass
@@ -58,6 +52,8 @@ class FileManager:
             # TODO access data from documents
             libraryLocation = sep.join(['d:', 'music'])
             dbLocation = sep.join([environ['USERPROFILE'], 'Documents', 'musictags.db'])
+            if TESTING:
+                dbLocation = 'mixie.db'
             # TODO: read file and select manager accordingly
             fileManager = BabyFileManager(libraryLocation, dbLocation)
 
@@ -68,9 +64,11 @@ class BabyFileManager(FileManager):
     def __init__(self, libraryLocation, dbLocation):
         super().__init__(libraryLocation, dbLocation)
     
-    def setupDB(self, con=None):
-        '''initialize tables'''
-        if not con:
+    def setupDB(self, con:sql.Connection=None):
+        '''initialize DB'''
+        if con:
+            cur = con.cursor()
+        else:
             con2, cur = self._connect_()
         cur.execute("CREATE TABLE IF NOT EXISTS song(id, location, songname)")
         cur.execute("CREATE TABLE IF NOT EXISTS tag(id, tagname)")
@@ -78,49 +76,77 @@ class BabyFileManager(FileManager):
         if not con:
             con2.commit()
             con2.close()
+        else:
+            con.commit()
     
     def _connect_(self):
         '''Sets up the db if not used and returns the Connection and Cursor for operations'''
-        con:sql.Connection = sql.connect(self.dbFile)
-        if isfile(self.dbfile):
+        if isfile(self.dbFile):
+            con:sql.Connection = sql.connect(self.dbFile)
             cur = con.cursor()
         else:
+            con:sql.Connection = sql.connect(self.dbFile)
             self.setupDB(con)
         return con, cur
-    
-    def getSongsWithTags(self, tags:list, matchAll):
-        '''returns a records of songs which contain the tags'''
-        con, cur = self._connect_()
-        tags = ', '.join(["'%s'"%tag for tag in tags])
-        if matchAll:
-            raise NotImplementedError # TODO
-        else:
-            query = "SELECT songname from song s INNER JOIN link l on s.id=l.songid WHERE l.tagid IN (SELECT id from tag WHERE tagname IN (%s))"%tags
-        cur.execute(query)
-        log(query)
-        res = cur.fetchall()
-        print(res)
-        return res
 
-    def load(self) -> dict:
+    def loadDB(self) -> dict:
         '''reads the db and returns the resultant dictionary'''
+        con, cur = self._connect_()
+        query = "SELECT location, songname, tagname FROM song s INNER JOIN link l on s.id=l.songid INNER JOIN tag t on t.id=l.tagid"
+        cur.execute(query)
+        res = cur.fetchall()
+        con.close()
 
-        if isfile(self.dbFile):
-            db = open(self.dbFile, 'r', encoding='utf-16')
-        else:
-            db = open(self.dbFile, 'w+', encoding='utf-16')
-            
-        content = db.read()
-        db.close()
-        TAG_DB = dict() # TODO change the hardcoded name
-        exec(content) # TODO this is a vulnerability
-        return TAG_DB
+        cache = dict()
+        for location, track, tag in res:
+            id = location + track
+            if id in cache:
+                cache[id] |= {tag,}
+            else:
+                cache[id] = {tag,}
+        return cache
     
-    def saveTagDb(self, tagdict):
-        '''saves the provided dictionary to the file in string format'''
-        db = open(self.dbFile, 'w+', encoding='utf-16')
-        db.write('TAG_DB = '+str(tagdict)) # TODO change the hardcoded name
-        db.close()
+    def saveDB(self, betaCache:dict):
+        '''saves the provided dictionary cache to the file after finding the delta'''
+        qDelLinks = '''DELETE FROM link WHERE songid=?'''
+        qFetchSongId = '''SELECT id FROM song WHERE location=? and songname=?'''
+        qInsertSong = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
+        qFetchTagId = '''SELECT id FROM tag WHERE tagname=?'''
+        qInsertTag = '''INSERT INTO tag(tagname) VALUES (?)'''
+        qInsertLink = '''INSERT INTO link(songid, tagid) VALUES (?, ?)'''
+        alphaCache = self.loadDB()
+        deltaCache = dict()
+        for id in betaCache:
+            if id in alphaCache:
+                if alphaCache[id] != betaCache[id]:
+                    deltaCache[id] = betaCache[id]
+            else:
+                deltaCache[id] = betaCache[id]
+
+        con, cur = self._connect_()
+        for id in deltaCache:
+            # find song id or insert new song
+            track = id.split('\\')[-1]
+            location = '\\'.join(id.split('\\')[:-1])
+            cur.execute(qFetchSongId, (location, track))
+            songid = cur.fetchone()
+            if not songid:
+                cur.execute(qInsertSong)
+                songid = cur.lastrowid
+            else:
+                cur.execute(qDelLinks, (songid,))
+
+            for tag in deltaCache[id]:
+                # find tagid or insert new tag
+                cur.execute(qFetchTagId, (tag,))
+                tagid = cur.fetchone()
+                if not tagid:
+                    cur.execute(qInsertTag, (tag,))
+                    tagid = cur.lastrowid
+                cur.execute(qInsertLink, (songid, tagid))
+        
+        con.commit()
+        con.close()
         log('tagDb saved')
 
 class MediaManager(): # TODO
@@ -145,6 +171,18 @@ class MixieController:
         '''Initializes the controller'''
         self.mixie = Mixie(fileManager, self)
     
+    def showInfo(self):
+        print(
+            'Mixie v%s'%VERSION,
+            'Usage','-----',
+            'mixie [tag] [moretags] [- [avoidtag] [moreavoidtags]]',
+            'mixie play trackname',
+            'mixie scan',
+            'mixie retag [search_trackname_to_retag]',
+            'mixie alltags',
+            sep='\n'
+        )
+        
     def main(self, args):
         '''processes the arguments received from user and pushes the action'''
         if not args:
@@ -165,7 +203,7 @@ class MixieController:
                 self.mix(*args)
     
     def tag(self, *args):
-        '''Facilitates input and output'''
+        '''UI for tag functionality'''
         try:
             print('Add tags (space separated) to your tracks.\nPress return to skip\nPress Ctrl+C to exit tagging tracks\n')                
             search_key = (input('Search for a track: ') if not args else ' '.join(args)).lower()
@@ -187,9 +225,7 @@ class MixieController:
             print('ReTagging Terminated')
     
     def scan(self, *_):
-        '''
-        CLI for scan operations
-        '''
+        '''UI for scan functionality'''
         untaggedFiles, badTags = self.mixie.scan()
         # TODO: add functionality to remove tags
         if untaggedFiles and 'no' not in input('\n%d untagged track(s) found, Tag them now ? '%len(untaggedFiles)).lower():
@@ -220,19 +256,8 @@ class MixieController:
     
     def playSpecific(self, *args):
         trackName = input('Song to play : ') if not args else ' '.join(args)
-        self.mixie.playSpecific(trackName)
-    
-    def showInfo(self):
-        print(
-            'Music v%s'%VERSION,
-            'Usage','-----',
-            'music [tag] [moretags] [- [avoidtag] [moreavoidtags]]',
-            'music play trackname',
-            'music scan',
-            'music retag [search_trackname_to_retag]',
-            'music alltags',
-            sep='\n'
-        )
+        playlist = self.mixie.selectSpecific(trackName)
+        self.loadPlaylist(playlist)
     
     def mix(self, *args):
         if not args:
@@ -246,11 +271,18 @@ class MixieController:
             addtags = {x.lower() for x in args}
             subtags = set()
 
-        self.mixie.mix(addtags, subtags)
+        playlist = self.mixie.mix(addtags, subtags)
+        self.loadPlaylist(playlist)
 
-    def loadPlaylist(self, playlist):
+    def loadPlaylist(self, playlist): # TODO mediaManager should handle this
+        if not playlist:
+            return
+        print(*playlist, '', 'Play Selection ? ', sep='\n', end='')
+        if 'no' in input().lower():
+            return
+
         system(QUERY_VLC_START)
-        log(QUERY_VLC_START+"\nVLC started :\\")
+        log(QUERY_VLC_START+'\nVLC started :\\')
         for song in playlist:
             system(QUERY_VLC_ENQUE%song)
     
@@ -268,32 +300,20 @@ class Mixie:
     def __init__(self, fileManager:FileManager, controller:MixieController):
         self.fileManager = fileManager
         self.controller = controller
+        self.db = self.fileManager.loadDB()
     
     def mix(self, addtags, subtags):
         '''cooks the playlist from the choice of tags'''
-        prePlaylist = {track for track in self.db if self.db[track] & addtags}
-        finalPlaylist = {track for track in prePlaylist if not self.db[track] & subtags}
         playlist = {
             track for track in self.db
             if self.db[track] & addtags and not self.db[track] & subtags
-        } # TODO: get rid of these
-
-        self.fileManager.getSongsWithTags(addtags)
-        if playlist:
-            self.loadPlaylist(playlist) # TODO add media manager here
+        }
+        return playlist
     
-    def loadPlaylist(self, playlist): # TODO mediaManager should handle this
-        system(QUERY_VLC_START)
-        log(QUERY_VLC_START+'\nVLC started :\\')
-        for song in playlist:
-            log(QUERY_VLC_ENQUE%song)
-            system(QUERY_VLC_ENQUE%song)
-    
-    def playSpecific(self, songName):
+    def selectSpecific(self, songName):
         '''cooks the playlist depending on song matching a keyword'''
         playlist = {track for track in self.db if songName in track}
-        if playlist:
-            self.loadPlaylist(playlist)
+        return playlist
     
     def findTracks(self, searchKey:str):
         '''returns a list of tracks that match the searchKey'''
