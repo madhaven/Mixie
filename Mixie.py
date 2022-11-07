@@ -1,15 +1,16 @@
 import sqlite3 as sql
 from abc import abstractmethod
 from os import environ, sep, system, walk
-from os.path import isfile
+from os.path import isfile, isdir
 from sys import argv
 
-TESTING = False#True#
+TESTING = True#False#
 VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
 QUERY_VLC_PREVIEW = 'start /b vlc.exe --playlist-enqueue "%s"'
 NON_MUSIC_FILES = ('jpg', 'ini', 'mp4', 'wmv')
+MIXIECONFIG = sep.join([environ['USERPROFILE'], 'mixie.db']) if not TESTING else 'mixie.db'
 def log(*args, wait=False, **kwargs):
     if TESTING:
         print(*args, **kwargs)
@@ -17,12 +18,18 @@ def log(*args, wait=False, **kwargs):
 
 class FileManager:
     '''handles the save and load of Mixie data'''
+    instance = None
 
     @abstractmethod
-    def __init__(self, libraryLocation, dbFile):
+    def __init__(self, dbFile, libraryLocation):
         # call super().__init__() while overriding this init
-        self.libraryLocation = libraryLocation
         self.dbFile = dbFile
+        self.libraryLocation = libraryLocation
+
+    @abstractmethod
+    def filerID(self):
+        '''should return a string that identifies the FileManager'''
+        raise NotImplementedError
 
     @abstractmethod
     def loadDB(self) -> dict:
@@ -42,51 +49,84 @@ class FileManager:
             for file in files
             if avoidNonMusic and file.split('.')[-1] not in NON_MUSIC_FILES
         }
+    
+    @classmethod
+    def initializeFiles(cls, libraryLocation:str, latestFiler:"FileManager"):
+        qCoreInit = "CREATE TABLE IF NOT EXISTS core(key VARCHAR UNIQUE, value VARCHAR)"
+        qCoreFiler = "INSERT INTO core(key, value) VALUES(?, ?)"
+        qCoreLibrary = "INSERT INTO core(key, value) VALUES(?, ?)"
 
-    @staticmethod
-    def getManager():
-        if False:
-            # TODO logic for creating initiating stuff if documents don't contain file
-            pass
+        con = sql.connect(MIXIECONFIG)
+        cur = con.cursor()
+        cur.execute(qCoreInit)
+        cur.execute(qCoreFiler, ('FileManagerStandard', latestFiler.filerID()))
+        cur.execute(qCoreLibrary, ('Library', libraryLocation))
+        con.commit()
+        con.close()
+
+    @classmethod
+    def getInstance(cls, controller:"MixieController") -> "FileManager":
+
+        # singleton implementation
+        if cls.instance:
+            return cls.instance
+        
+        #REGISTER SUBCLASSES HERE, LATEST LAST ORDER
+        filers = [BabyFileManager]
+        latestFiler = filers[-1]
+
+        if not isfile(MIXIECONFIG):
+            cls.initializeFiles(controller.getLibrary(), latestFiler)
+            controller.scan()
+
+        con = sql.connect(MIXIECONFIG)
+        cur = con.cursor()
+        cur.execute("SELECT value FROM core WHERE key=?", ('FileManagerStandard',))
+        res = cur.fetchone()
+        if not res:
+            con.close()
+            exit() # TODO: handle file read errors
+        filerId = res[0]
+        for filer in filers:
+            if filer.filerID() == filerId:
+                aptFiler = filer
+                break
         else:
-            # TODO access data from documents
-            libraryLocation = sep.join(['d:', 'music'])
-            dbLocation = sep.join([environ['USERPROFILE'], 'Documents', 'musictags.db'])
-            if TESTING:
-                dbLocation = 'mixie.db'
-            # TODO: read file and select manager accordingly
-            fileManager = BabyFileManager(libraryLocation, dbLocation)
+            con.close()
+            exit() # TODO: handle file read errors
 
-        return fileManager
+        cur.execute("SELECT value FROM core WHERE key=?", ('Library',))
+        res = cur.fetchone()
+        con.commit()
+        con.close()
+        if not res:
+            exit() # TODO: handle file read errors
+        library = res[0] # TODO: add multiple locations
+        return aptFiler(MIXIECONFIG, library)
 
 class BabyFileManager(FileManager):
 
-    def __init__(self, libraryLocation, dbLocation):
-        super().__init__(libraryLocation, dbLocation)
+    def __init__(self, dbLocation, libraryLocation):
+        super().__init__(dbLocation, libraryLocation)
+        con, cur = self._connect_()
+        self.setupDB(con, cur)
+        con.close()
     
-    def setupDB(self, con:sql.Connection=None):
+    @staticmethod
+    def filerID():
+        return 'BabyFileManager'
+    
+    def setupDB(self, con:sql.Connection, cur:sql.Cursor):
         '''initialize DB'''
-        if con:
-            cur = con.cursor()
-        else:
-            con2, cur = self._connect_()
-        cur.execute("CREATE TABLE IF NOT EXISTS song(id, location, songname)")
-        cur.execute("CREATE TABLE IF NOT EXISTS tag(id, tagname)")
+        cur.execute("CREATE TABLE IF NOT EXISTS song(id PRIMARY KEY, location VARCHAR, songname VARCHAR)")
+        cur.execute("CREATE TABLE IF NOT EXISTS tag(id PRIMARY KEY, tagname VARCHAR)")
         cur.execute("CREATE TABLE IF NOT EXISTS link(songid, tagid)")
-        if not con:
-            con2.commit()
-            con2.close()
-        else:
-            con.commit()
+        con.commit()
     
     def _connect_(self):
         '''Sets up the db if not used and returns the Connection and Cursor for operations'''
-        if isfile(self.dbFile):
-            con:sql.Connection = sql.connect(self.dbFile)
-            cur = con.cursor()
-        else:
-            con:sql.Connection = sql.connect(self.dbFile)
-            self.setupDB(con)
+        con:sql.Connection = sql.connect(self.dbFile)
+        cur = con.cursor()
         return con, cur
 
     def loadDB(self) -> dict:
@@ -167,9 +207,9 @@ class MediaManager(): # TODO
 class MixieController:
     '''handles all cli interaction'''
     
-    def __init__(self, fileManager:FileManager):
+    def __init__(self):
         '''Initializes the controller'''
-        self.mixie = Mixie(fileManager, self)
+        self.mixie = Mixie(self)
     
     def showInfo(self):
         print(
@@ -182,6 +222,15 @@ class MixieController:
             'mixie alltags',
             sep='\n'
         )
+
+    def getLibrary(self) -> str:
+        '''to ask User for library location(s)'''
+        library = input('Mixie needs to scan your Music Library to set up.\nDirectory where music is saved : ')
+        if isdir(library):
+            return library
+        else:
+            print("Set up failed: directory is invalid")
+            exit() # TODO handle error gracefully
         
     def main(self, args):
         '''processes the arguments received from user and pushes the action'''
@@ -297,11 +346,10 @@ class MixieController:
 class Mixie:
     '''contains the logic to handle processes'''
 
-    def __init__(self, fileManager:FileManager, controller:MixieController):
-        self.fileManager = fileManager
-        self.controller = controller
-        self.db = self.fileManager.loadDB()
-    
+    def __init__(self, controller):
+        self.fileManager = FileManager.getInstance(controller)
+        self.db = self.fileManager.loadDB() # TODO rename db to cache for understanding
+
     def mix(self, addtags, subtags):
         '''cooks the playlist from the choice of tags'''
         playlist = {
@@ -371,6 +419,6 @@ class Mixie:
 if __name__ == '__main__':
     cliArgs = [arg.lower() for arg in argv][1:]
     log('cliArgs:', cliArgs)
-    fileManager = FileManager.getManager() # TODO should handle creation of file if it doesn't exist
-    controller = MixieController(fileManager=fileManager)
+
+    controller = MixieController()
     controller.main(cliArgs)
