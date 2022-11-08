@@ -77,7 +77,6 @@ class FileManager:
 
         if not isfile(MIXIECONFIG):
             cls.initializeFiles(controller.getLibrary(), latestFiler)
-            controller.scan()
 
         con = sql.connect(MIXIECONFIG)
         cur = con.cursor()
@@ -118,8 +117,8 @@ class BabyFileManager(FileManager):
     
     def setupDB(self, con:sql.Connection, cur:sql.Cursor):
         '''initialize DB'''
-        cur.execute("CREATE TABLE IF NOT EXISTS song(id PRIMARY KEY, location VARCHAR, songname VARCHAR)")
-        cur.execute("CREATE TABLE IF NOT EXISTS tag(id PRIMARY KEY, tagname VARCHAR)")
+        cur.execute("CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, location VARCHAR, songname VARCHAR)")
+        cur.execute("CREATE TABLE IF NOT EXISTS tag(id INTEGER PRIMARY KEY, tagname VARCHAR)")
         cur.execute("CREATE TABLE IF NOT EXISTS link(songid, tagid)")
         con.commit()
     
@@ -149,8 +148,8 @@ class BabyFileManager(FileManager):
     def saveDB(self, betaCache:dict):
         '''saves the provided dictionary cache to the file after finding the delta'''
         qDelLinks = '''DELETE FROM link WHERE songid=?'''
-        qFetchSongId = '''SELECT id FROM song WHERE location=? and songname=?'''
-        qInsertSong = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
+        qFetchTrackId = '''SELECT id FROM song WHERE location=? and songname=?'''
+        qInsertTrack = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
         qFetchTagId = '''SELECT id FROM tag WHERE tagname=?'''
         qInsertTag = '''INSERT INTO tag(tagname) VALUES (?)'''
         qInsertLink = '''INSERT INTO link(songid, tagid) VALUES (?, ?)'''
@@ -168,22 +167,25 @@ class BabyFileManager(FileManager):
             # find song id or insert new song
             track = id.split('\\')[-1]
             location = '\\'.join(id.split('\\')[:-1])
-            cur.execute(qFetchSongId, (location, track))
-            songid = cur.fetchone()
-            if not songid:
-                cur.execute(qInsertSong)
-                songid = cur.lastrowid
+            cur.execute(qFetchTrackId, (location, track))
+            trackId = cur.fetchone()
+            if not trackId:
+                cur.execute(qInsertTrack, (location, track))
+                trackId = cur.lastrowid
             else:
-                cur.execute(qDelLinks, (songid,))
+                trackId = trackId[0]
+                cur.execute(qDelLinks, (trackId,))
 
             for tag in deltaCache[id]:
                 # find tagid or insert new tag
                 cur.execute(qFetchTagId, (tag,))
                 tagid = cur.fetchone()
-                if not tagid:
+                if tagid:
+                    tagid = tagid[0]
+                else:
                     cur.execute(qInsertTag, (tag,))
                     tagid = cur.lastrowid
-                cur.execute(qInsertLink, (songid, tagid))
+                cur.execute(qInsertLink, (trackId, tagid))
         
         con.commit()
         con.close()
@@ -225,11 +227,17 @@ class MixieController:
 
     def getLibrary(self) -> str:
         '''to ask User for library location(s)'''
-        library = input('Mixie needs to scan your Music Library to set up.\nDirectory where music is saved : ')
+        print(
+            'Mixie needs to scan your Music Library for setup',
+            'Run `mixie scan` after setup to tag your library for use',
+            'Directory where music is saved : ',
+            sep='\n', end='')
+        library = input()
         if isdir(library):
+            print('Mixie Setup complete')
             return library
         else:
-            print("Set up failed: directory is invalid")
+            print("Mixie Setup failed: directory is invalid")
             exit() # TODO handle error gracefully
         
     def main(self, args):
@@ -332,8 +340,8 @@ class MixieController:
 
         system(QUERY_VLC_START)
         log(QUERY_VLC_START+'\nVLC started :\\')
-        for song in playlist:
-            system(QUERY_VLC_ENQUE%song)
+        for track in playlist:
+            system(QUERY_VLC_ENQUE%track)
     
     def showAllTags(self):
         self.showTags(self.mixie.allTags())
@@ -346,7 +354,8 @@ class MixieController:
 class Mixie:
     '''contains the logic to handle processes'''
 
-    def __init__(self, controller):
+    def __init__(self, controller:MixieController):
+        controller.mixie = self
         self.fileManager = FileManager.getInstance(controller)
         self.db = self.fileManager.loadDB() # TODO rename db to cache for understanding
 
@@ -358,9 +367,9 @@ class Mixie:
         }
         return playlist
     
-    def selectSpecific(self, songName):
+    def selectSpecific(self, trackName):
         '''cooks the playlist depending on song matching a keyword'''
-        playlist = {track for track in self.db if songName in track}
+        playlist = {track for track in self.db if trackName in track}
         return playlist
     
     def findTracks(self, searchKey:str):
@@ -386,13 +395,14 @@ class Mixie:
         One containing files that are not tagged\n  
         The other containing files that were tagged but don't exist in the right location.  
         '''
-        files:set = self.fileManager.getFilesInLibrary() # TODO: make options for multiple library locations
-        untaggedFiles = [file for file in sorted(files - set(self.db))]
-        badTags = sorted(set(self.db) - set(files))
+        filesInLib:set = self.fileManager.getFilesInLibrary() # TODO: make options for multiple library locations
+        filesInCache:set = set(self.db)
+        untaggedFiles = [file for file in sorted(filesInLib - filesInCache)]
+        badTags = sorted(set(self.db) - filesInCache)
         return untaggedFiles, badTags
 
     def tag(self, track:str, newTags:set, keepOldTag=False):
-        '''edits tags of song'''
+        '''edits tags of a track'''
         if newTags:
             newTags = {tag.lower() for tag in newTags}
             if keepOldTag:
@@ -414,11 +424,14 @@ class Mixie:
     
     def saveDb(self):
         '''makes fileManager save db to file'''
-        self.fileManager.saveTagDb(self.db)
+        self.fileManager.saveDB(self.db)
 
 if __name__ == '__main__':
     cliArgs = [arg.lower() for arg in argv][1:]
     log('cliArgs:', cliArgs)
 
     controller = MixieController()
+    FileManager.getInstance(controller)
+    mixie = Mixie(controller)
+
     controller.main(cliArgs)

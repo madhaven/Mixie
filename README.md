@@ -13,33 +13,33 @@ Use these commands to control your Mixie.
 > to cook up a playlist
 >
 > ```shell
-> music
-> music [tags] [moretags] [...] [- [subtags] [moresubtags] [...]]
+> mixie
+> mixie [tags] [moretags] [...] [- [subtags] [moresubtags] [...]]
 > ```
 
 > to play songs from a search
 >
 > ```shell
-> music play [search query]
+> mixie play [track name]
 > ```  
 
-> to setup your music library with the right song tags
+> to setup your mixie library with the right song tags
 > to manage tracks that got misplaced or reallocated
 >
 > ```shell
-> music rescan
+> mixie scan
 > ```
 
 > to change tags of existing songs in your library
 >
 > ```shell
-> music retag [search_trackname_to_retag]
+> mixie retag [search_trackname_to_retag]
 > ```
 
 > to view all existing tags
 >
 > ```shell
-> music alltags
+> mixie alltags
 > ```
 
 ## Contribute to Mixie
@@ -61,4 +61,10 @@ Visit the [CONTRIBUTING.md](./CONTRIBUTING.md) documentation to learn how to con
   This is way faster as it only has to load a single dictionary db and does not have to deal with singular file saves.  
   The dictionary is saved as a text file. This might not be an optimum strategy but is left as a concern for later.  
   > Using [pickle](https://docs.python.org/3/library/pickle.html) to handle the db saves is a possible option.  
-* I'm currently working on fixing the architecture to be more modular so that it becomes easier to get new ideas in.  
+* The current architecture is more modular, It contains  
+  * `FileManager` abstraction to handle file I/O  
+  * a dictionary like before to cache all data before transport to file  
+  * a Controller that handles all user interaction
+  * and the `Mixie` which processes all core logic  
+
+  The separate classes help to handle diverse actions while keeping update impact minimal  
