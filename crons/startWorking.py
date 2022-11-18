@@ -25,7 +25,14 @@ newClass = []
 mixieContent = []
 for line in mixie:
     if line[:6] == 'class ' and line[-2]==':':
-        print('classFound:', line[6:(line.find('(') or line.rfind(':'))])
+        if line.rfind('(') == -1:
+            className = line[6:line.rfind(':')]
+            parents = None
+        else:
+            className = line[6:line.find('(')]
+            parents = line[line.find('(')+1:line.find(')')]
+            parents = parents.replace(' ', '').split(',')
+        print('classFound:', className)
         if line[6:11] == 'Mixie':
             mixieClassing = True
         if mixieClassing:
