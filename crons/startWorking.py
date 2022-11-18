@@ -1,7 +1,14 @@
+# script to convert singular Mixie file to a workable model
 from os.path import isfile
+LOGGING = False # Turning on logging will output logs
+def log(wait=False, *args, **kwargs):
+    if LOGGING:
+        print(*args, **kwargs)
+        if wait:
+            input()
 
 def saveClass(lines, parents:list=[], name=None, imports=[]):
-    print('\nsaving class', className)
+    log('\nsaving class', className)
     name = name+'.py' if name else lines[0][6:lines[0].rfind(':')] + '.py'
     file = open(name, 'w')
     for imp in imports:
@@ -12,7 +19,7 @@ def saveClass(lines, parents:list=[], name=None, imports=[]):
     file.close()
 
 if isfile('Mixie.py'):
-    print('Found Mixie in cwd')
+    log('Found Mixie in cwd')
     loc = ''
 else:
     print(
@@ -33,7 +40,7 @@ mixieContent = []
 allImports = []
 
 for line in mixie:
-    print(line, end='')
+    log(line, end='')
     if line[:6] == 'import' or line[:4] == 'from':
         allImports.append(line)
     if line[:6] == 'class ' and line[-2]==':':
@@ -49,7 +56,7 @@ for line in mixie:
             className = line[6:line.find('(')]
             parents = line[line.find('(')+1:line.find(')')]
             parents = parents.replace(' ', '').split(',')
-        print('\nclass:', className, ':' if parents else '', *parents)
+        log('\nclass:', className, ':' if parents else '', *parents)
         if className == 'Mixie':
             mixieContent.append(line)
         else:
@@ -70,3 +77,4 @@ mixieImports = {
     'from %s import *\n'%x for x in allClasses
 }
 saveClass(mixieContent, name='Mixie', imports=mixieImports)
+print('Convert completed.\nReady to Code')

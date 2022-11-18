@@ -1,9 +1,11 @@
+# Imports
 import sqlite3 as sql
 from abc import abstractmethod
 from os import environ, sep, system, walk
 from os.path import isfile, isdir
 from sys import argv
 
+# Globals
 TESTING = True#False#
 VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
@@ -16,6 +18,7 @@ def log(*args, wait=False, **kwargs):
         print(*args, **kwargs)
         if wait: input()
 
+# External Class
 class FileManager:
     '''handles the save and load of Mixie data'''
     instance = None
@@ -103,6 +106,7 @@ class FileManager:
         library = res[0] # TODO: add multiple locations
         return aptFiler(MIXIECONFIG, library)
 
+# External Class
 class BabyFileManager(FileManager):
 
     def __init__(self, dbLocation, libraryLocation):
@@ -191,6 +195,7 @@ class BabyFileManager(FileManager):
         con.close()
         log('tagDb saved')
 
+# External Class
 class MediaManager(): # TODO
     '''Handles all interaction to a media player.'''
 
@@ -206,6 +211,7 @@ class MediaManager(): # TODO
     def __init__(self, *args):
         raise NotImplementedError
 
+# External Class
 class MixieController:
     '''handles all cli interaction'''
     
