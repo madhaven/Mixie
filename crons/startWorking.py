@@ -1,12 +1,17 @@
 from os.path import isfile
 
-def saveClass(lines):
-    name = lines[0][6:lines[0].rfind(':')] + '.py'
+def saveClass(lines, parents:list=[], name=None, imports=[]):
+    print('\nsaving class', className)
+    name = name+'.py' if name else lines[0][6:lines[0].rfind(':')] + '.py'
     file = open(name, 'w')
+    for imp in imports:
+        file.write(imp)
+    for parent in parents:
+        file.write('from %s import *\n\n'%parent)
     file.write(''.join(lines))
     file.close()
 
-if False and isfile('Mixie.py'):
+if isfile('Mixie.py'):
     print('Found Mixie in cwd')
     loc = ''
 else:
@@ -20,34 +25,48 @@ file = open(loc + 'Mixie.py', 'r')
 mixie = file.readlines()
 file.close()
 
-mixieClassing = False
+className = ''
+allClasses = []
 newClass = []
+parents = []
 mixieContent = []
+allImports = []
+
 for line in mixie:
+    print(line, end='')
+    if line[:6] == 'import' or line[:4] == 'from':
+        allImports.append(line)
     if line[:6] == 'class ' and line[-2]==':':
+        if newClass:
+            saveClass(newClass, parents=parents, name=className, imports=allImports)
+            parents = []
+            newClass = []
+            className = ''
         if line.rfind('(') == -1:
             className = line[6:line.rfind(':')]
-            parents = None
+            parents = []
         else:
             className = line[6:line.find('(')]
             parents = line[line.find('(')+1:line.find(')')]
             parents = parents.replace(' ', '').split(',')
-        print('classFound:', className)
-        if line[6:11] == 'Mixie':
-            mixieClassing = True
-        if mixieClassing:
+        print('\nclass:', className, ':' if parents else '', *parents)
+        if className == 'Mixie':
             mixieContent.append(line)
         else:
             newClass.append(line)
+            allClasses.append(className)
     elif newClass:
-        if line[:4] == '    ':
-            if mixieClassing:
-                mixieContent.append(line)
-            else:
-                newClass.append(line)
+        if line[:4] in {'    ', '\n'}:
+            newClass.append(line)
         else:
-            mixieClassing = False
-            saveClass(newClass)
-            newclass = []
+            saveClass(newClass, parents=parents, name=className, imports=allImports)
+            parents = []
+            newClass = []
+            className = ''
     else:
         mixieContent.append(line)
+
+mixieImports = {
+    'from %s import *\n'%x for x in allClasses
+}
+saveClass(mixieContent, name='Mixie', imports=mixieImports)
