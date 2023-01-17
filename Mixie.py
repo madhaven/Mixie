@@ -1,195 +1,20 @@
-import sqlite3 as sql
 from abc import abstractmethod
-from os import environ, sep, system, walk
-from os.path import isfile, isdir
+from os import environ, sep, system
+from os.path import isdir
 from sys import argv
+from FileManager import *
 
 TESTING = True#False#
 VERSION = '6.0.0 arch'
 QUERY_VLC_START = 'start vlc --random --loop --playlist-autostart --qt-start-minimized --one-instance --mmdevice-volume=0.35'
 QUERY_VLC_ENQUE = 'start vlc --qt-start-minimized --one-instance --playlist-enqueue "%s"'
 QUERY_VLC_PREVIEW = 'start /b vlc.exe --playlist-enqueue "%s"'
-NON_MUSIC_FILES = ('jpg', 'ini', 'mp4', 'wmv')
 MIXIECONFIG = sep.join([environ['USERPROFILE'], 'mixie.db']) if not TESTING else 'mixie.db'
 def log(*args, wait=False, **kwargs):
     if TESTING:
         print(*args, **kwargs)
         if wait: input()
 
-class FileManager:
-    '''handles the save and load of Mixie data'''
-    instance = None
-
-    @abstractmethod
-    def __init__(self, dbFile, libraryLocation):
-        # call super().__init__() while overriding this init
-        self.dbFile = dbFile
-        self.libraryLocation = libraryLocation
-
-    @abstractmethod
-    def filerID(self):
-        '''should return a string that identifies the FileManager'''
-        raise NotImplementedError
-
-    @abstractmethod
-    def loadDB(self) -> dict:
-        '''reads the db and returns the resultant dictionary'''
-        raise NotImplementedError
-    
-    @abstractmethod
-    def saveDB(self, tagDict:dict):
-        '''saves the provided dictionary to the file.'''
-        raise NotImplementedError
-    
-    def getFilesInLibrary(self, avoidNonMusic=True) -> set:
-        '''walks through the file tree with `os.walk` and returns a set of all files included'''
-        return {
-            (root + sep + file).lower()
-            for root, _, files in walk(self.libraryLocation)
-            for file in files
-            if avoidNonMusic and file.split('.')[-1] not in NON_MUSIC_FILES
-        }
-    
-    @classmethod
-    def initializeFiles(cls, libraryLocation:str, latestFiler:"FileManager"):
-        qCoreInit = "CREATE TABLE IF NOT EXISTS core(key VARCHAR UNIQUE, value VARCHAR)"
-        qCoreFiler = "INSERT INTO core(key, value) VALUES(?, ?)"
-        qCoreLibrary = "INSERT INTO core(key, value) VALUES(?, ?)"
-
-        con = sql.connect(MIXIECONFIG)
-        cur = con.cursor()
-        cur.execute(qCoreInit)
-        cur.execute(qCoreFiler, ('FileManagerStandard', latestFiler.filerID()))
-        cur.execute(qCoreLibrary, ('Library', libraryLocation))
-        con.commit()
-        con.close()
-
-    @classmethod
-    def getInstance(cls, controller:"MixieController") -> "FileManager":
-
-        # singleton implementation
-        if cls.instance:
-            return cls.instance
-        
-        #REGISTER SUBCLASSES HERE, LATEST LAST ORDER
-        filers = [BabyFileManager]
-        latestFiler = filers[-1]
-
-        if not isfile(MIXIECONFIG):
-            cls.initializeFiles(controller.getLibrary(), latestFiler)
-
-        con = sql.connect(MIXIECONFIG)
-        cur = con.cursor()
-        cur.execute("SELECT value FROM core WHERE key=?", ('FileManagerStandard',))
-        res = cur.fetchone()
-        if not res:
-            con.close()
-            exit() # TODO: handle file read errors
-        filerId = res[0]
-        for filer in filers:
-            if filer.filerID() == filerId:
-                aptFiler = filer
-                break
-        else:
-            con.close()
-            exit() # TODO: handle file read errors
-
-        cur.execute("SELECT value FROM core WHERE key=?", ('Library',))
-        res = cur.fetchone()
-        con.commit()
-        con.close()
-        if not res:
-            exit() # TODO: handle file read errors
-        library = res[0] # TODO: add multiple locations
-        return aptFiler(MIXIECONFIG, library)
-
-class BabyFileManager(FileManager):
-
-    def __init__(self, dbLocation, libraryLocation):
-        super().__init__(dbLocation, libraryLocation)
-        con, cur = self._connect_()
-        self.setupDB(con, cur)
-        con.close()
-    
-    @staticmethod
-    def filerID():
-        return 'BabyFileManager'
-    
-    def setupDB(self, con:sql.Connection, cur:sql.Cursor):
-        '''initialize DB'''
-        cur.execute("CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, location VARCHAR, songname VARCHAR)")
-        cur.execute("CREATE TABLE IF NOT EXISTS tag(id INTEGER PRIMARY KEY, tagname VARCHAR)")
-        cur.execute("CREATE TABLE IF NOT EXISTS link(songid, tagid)")
-        con.commit()
-    
-    def _connect_(self):
-        '''Sets up the db if not used and returns the Connection and Cursor for operations'''
-        con:sql.Connection = sql.connect(self.dbFile)
-        cur = con.cursor()
-        return con, cur
-
-    def loadDB(self) -> dict:
-        '''reads the db and returns the resultant dictionary'''
-        con, cur = self._connect_()
-        query = "SELECT location, songname, tagname FROM song s INNER JOIN link l on s.id=l.songid INNER JOIN tag t on t.id=l.tagid"
-        cur.execute(query)
-        res = cur.fetchall()
-        con.close()
-
-        cache = dict()
-        for location, track, tag in res:
-            id = location + track
-            if id in cache:
-                cache[id] |= {tag,}
-            else:
-                cache[id] = {tag,}
-        return cache
-    
-    def saveDB(self, betaCache:dict):
-        '''saves the provided dictionary cache to the file after finding the delta'''
-        qDelLinks = '''DELETE FROM link WHERE songid=?'''
-        qFetchTrackId = '''SELECT id FROM song WHERE location=? and songname=?'''
-        qInsertTrack = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
-        qFetchTagId = '''SELECT id FROM tag WHERE tagname=?'''
-        qInsertTag = '''INSERT INTO tag(tagname) VALUES (?)'''
-        qInsertLink = '''INSERT INTO link(songid, tagid) VALUES (?, ?)'''
-        alphaCache = self.loadDB()
-        deltaCache = dict()
-        for id in betaCache:
-            if id in alphaCache:
-                if alphaCache[id] != betaCache[id]:
-                    deltaCache[id] = betaCache[id]
-            else:
-                deltaCache[id] = betaCache[id]
-
-        con, cur = self._connect_()
-        for id in deltaCache:
-            # find song id or insert new song
-            track = id.split('\\')[-1]
-            location = '\\'.join(id.split('\\')[:-1])
-            cur.execute(qFetchTrackId, (location, track))
-            trackId = cur.fetchone()
-            if not trackId:
-                cur.execute(qInsertTrack, (location, track))
-                trackId = cur.lastrowid
-            else:
-                trackId = trackId[0]
-                cur.execute(qDelLinks, (trackId,))
-
-            for tag in deltaCache[id]:
-                # find tagid or insert new tag
-                cur.execute(qFetchTagId, (tag,))
-                tagid = cur.fetchone()
-                if tagid:
-                    tagid = tagid[0]
-                else:
-                    cur.execute(qInsertTag, (tag,))
-                    tagid = cur.lastrowid
-                cur.execute(qInsertLink, (trackId, tagid))
-        
-        con.commit()
-        con.close()
-        log('tagDb saved')
 
 class MediaManager(): # TODO
     '''Handles all interaction to a media player.'''
@@ -211,7 +36,7 @@ class MixieController:
     
     def __init__(self):
         '''Initializes the controller'''
-        self.mixie = Mixie(self)
+        self.mixie:Mixie = None # to be assigned when a Mixie instance is created
     
     def showInfo(self):
         print(
@@ -226,11 +51,11 @@ class MixieController:
         )
 
     def getLibrary(self) -> str:
-        '''to ask User for library location(s)'''
+        '''to ask User for the library location(s)'''
         print(
             'Mixie needs to scan your Music Library for setup',
-            'Run `mixie scan` after setup to tag your library for use',
-            'Directory where music is saved : ',
+            'Run `mixie scan` after setup to tag contents in your library for use',
+            'Library Location : ',
             sep='\n', end='')
         library = input()
         if isdir(library):
@@ -355,8 +180,9 @@ class Mixie:
     '''contains the logic to handle processes'''
 
     def __init__(self, controller:MixieController):
+        '''attaches the instance of Mixie to the controller and acquires an instance of the fileManager'''
         controller.mixie = self
-        self.fileManager = FileManager.getInstance(controller)
+        self.fileManager = FileManager.getInstance(controller, MIXIECONFIG)
         self.db = self.fileManager.loadDB() # TODO rename db to cache for understanding
 
     def mix(self, addtags, subtags):
@@ -431,7 +257,7 @@ if __name__ == '__main__':
     log('cliArgs:', cliArgs)
 
     controller = MixieController()
-    FileManager.getInstance(controller)
+    # filer = FileManager.getInstance(controller)
     mixie = Mixie(controller)
 
     controller.main(cliArgs)
