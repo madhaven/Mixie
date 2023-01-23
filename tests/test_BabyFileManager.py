@@ -2,10 +2,10 @@ from unittest import TestCase, main
 from FileManager import BabyFileManager, FileManager
 import sqlite3 as sql
 from os import sep, path, remove
-from Mixie import MixieController
+from Controllers import BaseController, CLIController
 
 
-class DummyController(MixieController):
+class DummyCLIController(CLIController):
     def getLibrary(self) -> str:
         return '.'
 
@@ -20,13 +20,14 @@ class BabyFileManagerTests(TestCase):
         return super().tearDownClass()
 
     def test_properIDReturned(self):
-        filer = FileManager.getInstance(DummyController(), self.testDB, BabyFileManager)
+        filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
         self.assertEqual('BabyFileManager', filer.filerID())
         if path.isfile(self.testDB):
             remove(self.testDB)
 
     def test_loadDB(self):
-        FileManager.getInstance(DummyController(), self.testDB, BabyFileManager)
+        filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
+        filer.clearInstance()
         con = sql.connect(self.testDB)
         cur = con.cursor()
         cur.execute(BabyFileManager.qCreateSongTable)
@@ -64,7 +65,7 @@ class BabyFileManagerTests(TestCase):
         self.assertDictEqual(d1, d2)
 
     def test_saveDB(self):
-        filer = FileManager.getInstance(DummyController(), self.testDB, BabyFileManager)
+        filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
         con = sql.connect(self.testDB)
         cur = con.cursor()
         cur.execute(filer.qCreateSongTable)
@@ -82,7 +83,7 @@ class BabyFileManagerTests(TestCase):
         con = sql.connect(self.testDB)
         cur = con.cursor()
         cur.execute("SELECT * FROM song")
-        songs = set(cur.fetchall())
+        dbSongs = set(cur.fetchall())
         cur.execute("SELECT * FROM tag")
         tags = set(cur.fetchall())
         cur.execute("SELECT * from link")
@@ -91,9 +92,9 @@ class BabyFileManagerTests(TestCase):
         if path.isfile(self.testDB):
             remove(self.testDB)
 
-        self.assertEquals(songs, {
-            (1, '.', 'sample.mp3'),
-            (2, '.', 'sample2.mp3')
+        self.assertEquals(dbSongs, {
+            (1, '.' + sep, 'sample.mp3'),
+            (2, '.' + sep, 'sample2.mp3')
         })
         self.assertEquals(tags, {
             (1, 'happy'),

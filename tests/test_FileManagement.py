@@ -1,12 +1,11 @@
 from unittest import main, TestCase, expectedFailure
 from FileManager import FileManager
-from time import sleep
-from Mixie import MixieController
+from Mixie import CLIController
 import os
 import sqlite3 as sql
 
 
-class DummyController(MixieController):
+class DummyController(CLIController):
     def getLibrary(self) -> str:
         return '.'
 
