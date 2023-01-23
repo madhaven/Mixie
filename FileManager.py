@@ -1,8 +1,7 @@
 import sqlite3 as sql
-from abc import *
-from os import sep, walk, environ
-from os.path import isfile
-from Mixie import log, MixieController
+from abc import abstractmethod, abstractstaticmethod
+import os
+import Mixie
 
 
 class FileManager:
@@ -11,6 +10,10 @@ class FileManager:
     NON_MUSIC_FILES = []
     filers = None
     latestFiler:"FileManager" = None
+
+    qGetValue = "SELECT value FROM core WHERE key=?"
+    qCoreInit = "CREATE TABLE IF NOT EXISTS core(key VARCHAR UNIQUE, value VARCHAR)"
+    qCoreInsert = "INSERT INTO core(key, value) VALUES(?, ?)"
 
     @abstractmethod
     def __init__(self, dbFile, libraryLocation, nonMusicFileTypes:list=None):
@@ -38,8 +41,8 @@ class FileManager:
     def getFilesInLibrary(self, avoidNonMusic=True) -> set:
         '''walks through the file tree with `os.walk` and returns a set of all files included'''
         return {
-            (root + sep + file)
-            for root, _, files in walk(self.libraryLocation)
+            (root + os.sep + file)
+            for root, _, files in os.walk(self.libraryLocation)
             for file in files
             if avoidNonMusic and file.split('.')[-1] not in self.NON_MUSIC_FILES
         }
@@ -49,37 +52,34 @@ class FileManager:
         '''sets up the core table of the db with basic information
         useFiler forces the usage of a specific FileManager instead of the latest available
         '''
-        
-        qCoreInit = "CREATE TABLE IF NOT EXISTS core(key VARCHAR UNIQUE, value VARCHAR)"
-        qCoreInsert = "INSERT INTO core(key, value) VALUES(?, ?)"
 
         con = sql.connect(MIXIEDB)
         cur = con.cursor()
-        cur.execute(qCoreInit)
+        cur.execute(cls.qCoreInit)
         filer = useFiler.filerID() if useFiler else cls.latestFiler.filerID()
-        cur.execute(qCoreInsert, ('FileManagerStandard', filer))
-        cur.execute(qCoreInsert, ('Library', libraryLocation))
+        cur.execute(cls.qCoreInsert, ('FileManagerStandard', filer))
+        cur.execute(cls.qCoreInsert, ('Library', libraryLocation))
         con.commit()
         con.close()
 
     @classmethod
-    def getInstance(cls, controller:"MixieController", MIXIEDB:str = None, useFiler=None) -> "FileManager":
+    def getInstance(cls, controller:"Mixie.CLIController", MIXIEDB:str = None, useFiler=None) -> "FileManager":
         '''Returns a singleton instance of a fileManager
         useFiler if specified will force the usage of a specific FileManager instead of the latest'''
 
         if cls.instance:
             return cls.instance
 
-        if not MIXIEDB or not isfile(MIXIEDB):
+        if not MIXIEDB or not os.path.isfile(MIXIEDB):
             cls.initializeFiles(controller.getLibrary(), MIXIEDB, useFiler)
 
         con = sql.connect(MIXIEDB)
         cur = con.cursor()
-        cur.execute("SELECT value FROM core WHERE key=?", ('FileManagerStandard',))
+        cur.execute(cls.qGetValue, ('FileManagerStandard',))
         res = cur.fetchone()
         if not res:
             con.close()
-            log('handle file read errors')
+            Mixie.log('handle file read errors')
             exit() # TODO: handle file read errors
         filerId = res[0]
         for filer in cls.filers:
@@ -88,15 +88,15 @@ class FileManager:
                 break
         else:
             con.close()
-            log('handle file read errors 2')
+            Mixie.log('handle file read errors 2')
             exit() # TODO: handle file read errors
 
-        cur.execute("SELECT value FROM core WHERE key=?", ('Library',))
+        cur.execute(cls.qGetValue, ('Library',))
         res = cur.fetchone()
         con.commit()
         con.close()
         if not res:
-            log('handle file read errors 3')
+            Mixie.log('handle file read errors 3')
             exit() # TODO: handle file read errors
         library = res[0] # TODO: add multiple locations
         cls.instance = aptFiler(MIXIEDB, library)
@@ -173,9 +173,10 @@ class BabyFileManager(FileManager):
 
         con, cur = self._connect_()
         for id in deltaCache:
+            id:str
             # find song id or insert new song
-            track = id.split(sep)[-1]
-            location = sep.join(id.split(sep)[:-1])
+            track = id.split(os.sep)[-1]
+            location = id[:id.rfind(os.sep) + 1]
             cur.execute(self.qFetchSongId, (location, track))
             trackId = cur.fetchone()
             if not trackId:
@@ -198,7 +199,7 @@ class BabyFileManager(FileManager):
         
         con.commit()
         con.close()
-        log('tagDb saved')
+        Mixie.log('tagDb saved')
 
 #REGISTER SUBCLASSES HERE, LATEST LAST ORDER
 FileManager.filers = [BabyFileManager]
