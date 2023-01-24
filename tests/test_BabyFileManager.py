@@ -21,9 +21,9 @@ class BabyFileManagerTests(TestCase):
 
     def test_properIDReturned(self):
         filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
-        self.assertEqual('BabyFileManager', filer.filerID())
         if path.isfile(self.testDB):
             remove(self.testDB)
+        self.assertEqual('BabyFileManager', filer.filerID(), 'Improper ID returned')
 
     def test_loadDB(self):
         filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
@@ -62,7 +62,7 @@ class BabyFileManagerTests(TestCase):
         }
         if path.isfile(self.testDB):
             remove(self.testDB)
-        self.assertDictEqual(d1, d2)
+        self.assertDictEqual(d1, d2, 'DB not loaded properly')
 
     def test_saveDB(self):
         filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
@@ -95,13 +95,13 @@ class BabyFileManagerTests(TestCase):
         self.assertEquals(dbSongs, {
             (1, '.' + sep, 'sample.mp3'),
             (2, '.' + sep, 'sample2.mp3')
-        })
+        }, 'DB not saved properly')
         self.assertEquals(tags, {
             (1, 'happy'),
             (2, 'crazy')
-        })
+        }, 'DB not saved properly')
         self.assertEquals(links, {
             (1, 1),
             (2, 1),
             (2, 2)
-        })
+        }, 'DB not saved properly')

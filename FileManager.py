@@ -7,7 +7,7 @@ import Mixie
 class FileManager:
     '''handles the save and load of Mixie data'''
     instance = None
-    NON_MUSIC_FILES = []
+    MUSIC_FILES = []
     filers = None
     latestFiler:"FileManager" = None
 
@@ -21,7 +21,7 @@ class FileManager:
         self.dbFile = dbFile
         self.libraryLocation = libraryLocation
         if not nonMusicFileTypes:
-            self.NON_MUSIC_FILES.extend(['jpg', 'ini', 'mp4', 'wmv'])
+            self.MUSIC_FILES.extend(['mp3', 'MP3'])
 
     @abstractstaticmethod
     def filerID(self):
@@ -44,7 +44,7 @@ class FileManager:
             (root + os.sep + file)
             for root, _, files in os.walk(self.libraryLocation)
             for file in files
-            if avoidNonMusic and file.split('.')[-1] not in self.NON_MUSIC_FILES
+            if avoidNonMusic and file.split('.')[-1] in self.MUSIC_FILES
         }
     
     @classmethod

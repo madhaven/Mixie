@@ -19,7 +19,7 @@ class Mixie:
         self.fileManager = fileManager
         self.dbCache = self.fileManager.loadDB()
 
-    def mix(self, addtags:set, subtags:set=set()):
+    def mix(self, addtags:set, subtags:set=set()) -> set:
         '''cooks the playlist from the choice of tags'''
         playlist = {
             track for track in self.dbCache
@@ -27,27 +27,24 @@ class Mixie:
         }
         return playlist
     
-    def selectSpecific(self, searchKey):
+    def selectSpecific(self, searchKey:str) -> set:
         '''cooks the playlist depending on song matching a keyword'''
-        playlist = {track for track in self.dbCache if searchKey in track}
+        playlist = { track for track in self.dbCache if searchKey in track }
         return playlist
     
-    def findTracks(self, searchKey:str):
+    def findTracks(self, searchKey:str) -> list:
         '''returns a list of tracks that match the searchKey'''
-        if not searchKey:
-            return []
-        else:
-            return [
-                track for track in sorted(self.dbCache)
-                if searchKey in track]
+        return [
+            track for track in sorted(self.dbCache)
+            if searchKey in track
+        ]
     
-    def allTags(self):
+    def allTags(self) -> list:
         '''returns a sorted list of all the tags used across the library'''
-        # printTags(sorted({tag for track in TAG_DB for tag in TAG_DB[track]}))
         return sorted({tag for track in self.dbCache for tag in self.dbCache[track]})
     
-    def tagsOfTrack(self, track):
-        return self.dbCache[track] if track in self.dbCache else []
+    def tagsOfTrack(self, track) -> list:
+        return sorted(self.dbCache[track]) if track in self.dbCache else []
     
     def scan(self):
         '''
@@ -57,9 +54,9 @@ class Mixie:
         '''
         filesInLib:set = self.fileManager.getFilesInLibrary() # TODO: make options for multiple library locations
         filesInCache:set = set(self.dbCache)
-        untaggedFiles = [file for file in sorted(filesInLib - filesInCache)]
-        badTags = sorted(set(self.dbCache) - filesInCache)
-        return untaggedFiles, badTags
+        untaggedFiles = sorted(filesInLib - filesInCache)
+        badFiles = sorted(filesInCache - filesInLib)
+        return untaggedFiles, badFiles
 
     def tag(self, track:str, newTags:set, keepOldTag=False):
         '''edits tags of a track'''
