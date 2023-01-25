@@ -3,8 +3,8 @@ from sys import argv
 from FileManager import *
 from Controllers import *
 
-TESTING = True#False#
-MIXIECONFIG = sep.join([environ['USERPROFILE'], 'mixie.db']) if not TESTING else 'mixie.db'
+TESTING = False#True#
+MIXIEDB = sep.join([environ['USERPROFILE'], 'mixie.db']) if not TESTING else 'mixie.db'
 def log(*args, wait=False, **kwargs):
     if TESTING:
         print(*args, **kwargs)
@@ -14,10 +14,13 @@ class Mixie:
     '''contains the logic to handle processes'''
     VERSION = '6.0.0 arch'
 
-    def __init__(self, fileManager:"FileManager"):
+    def __init__(self, controller:BaseController, fileManager:"FileManager"):
         '''attaches the instance of Mixie to the controller and acquires an instance of the fileManager'''
         self.fileManager = fileManager
+        self.dbCache = dict()
         self.dbCache = self.fileManager.loadDB()
+        self.controller = controller
+        self.controller.mixie = self
 
     def mix(self, addtags:set, subtags:set=set()) -> set:
         '''cooks the playlist from the choice of tags'''
@@ -87,8 +90,8 @@ if __name__ == '__main__':
     cliArgs = [arg.lower() for arg in argv][1:]
     log('cliArgs:', cliArgs)
 
-    mixie = Mixie()
-    controller = CLIController(mixie)
-    filer = FileManager.getInstance(controller)
+    controller = CLIController()
+    filer = FileManager.getInstance(controller, MIXIEDB)
+    mixie = Mixie(controller, filer)
 
     controller.main(cliArgs)

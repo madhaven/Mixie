@@ -50,7 +50,7 @@ class CLIController(BaseController):
     
     def __init__(self):
         '''Initializes the controller'''
-        self.mixie:Mixie = None # to be assigned when a Mixie instance is created
+        self.mixie:Mixie.Mixie = None # to be assigned when a Mixie instance is created
     
     def showInfo(self):
         print(
@@ -110,7 +110,7 @@ class CLIController(BaseController):
             
             for track in tracks:
                 print(track, ':', *self.mixie.tagsOfTrack(track), end=': ')
-                os.system(MediaManager.QUERY_VLC_PREVIEW%track) # TODO: change vlc pings to Media Manager
+                os.system(MediaManager.MediaManager.QUERY_VLC_PREVIEW%track) # TODO: change vlc pings to Media Manager
                 tags = set(input().lower().split())
                 self.mixie.tag(track, tags)
         except KeyboardInterrupt:
@@ -129,7 +129,7 @@ class CLIController(BaseController):
             try:
                 for i, track in enumerate(untaggedFiles):
                     print('%5.2f%% %s'%((i+1)*100/len(untaggedFiles), track), end=' : ')
-                    os.system(MediaManager.QUERY_VLC_PREVIEW%track) # TODO: media player should handle previewing songs
+                    os.system(MediaManager.MediaManager.QUERY_VLC_PREVIEW%track) # TODO: media player should handle previewing songs
                     tags = set(input().lower().split())
                     self.mixie.tag(track, tags)
             except KeyboardInterrupt:
@@ -144,7 +144,9 @@ class CLIController(BaseController):
             try:
                 for i, track in enumerate(badTags):
                     print('%5.2f%% %s'%((i+1)*100/len(badTags), track))
-                    newTrack = input('drop new track : ')[1:-1].lower()
+                    newTrack = input('drop new track : ')
+                    if newTrack[0] == '"' == newTrack[-1]:
+                        newTrack = newTrack[1:-1]
                     self.mixie.replaceTrack(track, newTrack)
             except Exception as e: Mixie.log(e)
             except: pass
@@ -179,10 +181,10 @@ class CLIController(BaseController):
         if 'no' in input().lower():
             return
 
-        os.system(MediaManager.QUERY_VLC_START)
-        Mixie.log(MediaManager.QUERY_VLC_START+'\nVLC started :\\')
+        os.system(MediaManager.MediaManager.QUERY_VLC_START)
+        Mixie.log(MediaManager.MediaManager.QUERY_VLC_START+'\nVLC started :\\')
         for track in playlist:
-            os.system(MediaManager.QUERY_VLC_ENQUE%track)
+            os.system(MediaManager.MediaManager.QUERY_VLC_ENQUE%track)
     
     def showAllTags(self):
         self.showTags(self.mixie.allTags())
