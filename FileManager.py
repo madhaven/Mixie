@@ -40,12 +40,15 @@ class FileManager:
     
     def getFilesInLibrary(self, avoidNonMusic=True) -> set:
         '''walks through the file tree with `os.walk` and returns a set of all files included'''
-        return {
-            (os.path.join(root, file))
-            for root, _, files in os.walk(self.libraryLocation)
-            for file in files
-            if avoidNonMusic and file[file.rfind('.')+1:] in self.MUSIC_FILES
-        }
+        libFiles:set = set()
+        for root, _, files in os.walk(self.libraryLocation):
+            for file in files:
+                if avoidNonMusic and file[file.rfind('.')+1:] in self.MUSIC_FILES:
+                    filename = os.path.join(root, file)
+                    if os.name == 'nt': # windows OS
+                        filename = filename.lower()
+                    libFiles.add(filename)
+        return libFiles
     
     @classmethod
     def initializeFiles(cls, libraryLocation:str, MIXIEDB:str, useFiler:"FileManager"=None):
@@ -110,13 +113,14 @@ class FileManager:
 
 class BabyFileManager(FileManager):
     qDelLinks = '''DELETE FROM link WHERE songid=?'''
+    qDelSong = '''DELETE FROM song WHERE location=? and songname=?'''
     qFetchSongId = '''SELECT id FROM song WHERE location=? and songname=?'''
     qInsertSong = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
     qFetchTagId = '''SELECT id FROM tag WHERE tagname=?'''
     qInsertTag = '''INSERT INTO tag(tagname) VALUES (?)'''
     qInsertLink = '''INSERT INTO link(songid, tagid) VALUES (?, ?)'''
-    qCreateSongTable = '''CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, location VARCHAR, songname VARCHAR)'''
-    qCreateTagTable = '''CREATE TABLE IF NOT EXISTS tag(id INTEGER PRIMARY KEY, tagname VARCHAR)'''
+    qCreateSongTable = '''CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, location TEXT COLLATE NOCASE, songname TEXT COLLATE NOCASE)'''
+    qCreateTagTable = '''CREATE TABLE IF NOT EXISTS tag(id INTEGER PRIMARY KEY, tagname TEXT)'''
     qCreateLinkTable = '''CREATE TABLE IF NOT EXISTS link(songid, tagid)'''
 
     def __init__(self, dbLocation, libraryLocation):
@@ -153,15 +157,19 @@ class BabyFileManager(FileManager):
         cache = dict()
         for location, track, tag in res:
             id = location + track
+            if os.name == 'nt': # case-insensitive Windows OS
+                id = id.lower()
             if id in cache:
                 cache[id] |= {tag,}
             else:
                 cache[id] = {tag,}
         return cache
     
-    def saveDB(self, betaCache:dict) -> None:
+    def saveDB(self, betaCache:dict) -> None: # TODO optimize
         '''saves the provided dictionary cache to the file after finding the delta'''
+
         alphaCache = self.loadDB()
+        filesToRemove = set(alphaCache) - set(betaCache)
         deltaCache = dict()
         for id in betaCache:
             if id in alphaCache:
@@ -176,7 +184,6 @@ class BabyFileManager(FileManager):
             id:str
             # find song id or insert new song
             track = id[id.rfind(os.sep) + 1:]
-            # track = id.split(os.sep)[-1]
             location = id[:id.rfind(os.sep) + 1]
             cur.execute(self.qFetchSongId, (location, track))
             trackId = cur.fetchone()
@@ -197,6 +204,11 @@ class BabyFileManager(FileManager):
                     cur.execute(self.qInsertTag, (tag,))
                     tagid = cur.lastrowid
                 cur.execute(self.qInsertLink, (trackId, tagid))
+        
+        for id in filesToRemove:
+            track = id[id.rfind(os.sep) + 1:]
+            location = id[:id.rfind(os.sep) + 1]
+            cur.execute(self.qDelSong, (location, track))
         
         con.commit()
         con.close()

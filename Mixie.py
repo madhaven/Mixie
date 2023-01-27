@@ -12,7 +12,7 @@ def log(*args, wait=False, **kwargs):
 
 class Mixie:
     '''contains the logic to handle processes'''
-    VERSION = '6.0.0 arch'
+    VERSION = '6.1.0 fileSplit'
 
     def __init__(self, controller:BaseController, fileManager:"FileManager"):
         '''attaches the instance of Mixie to the controller and acquires an instance of the fileManager'''
@@ -64,7 +64,7 @@ class Mixie:
     def tag(self, track:str, newTags:set, keepOldTag=False):
         '''edits tags of a track'''
         if newTags:
-            newTags = {tag.lower() for tag in newTags}
+            newTags = { tag.lower() for tag in newTags }
             if keepOldTag:
                 self.dbCache[track] |= newTags
             else:

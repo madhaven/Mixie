@@ -10,11 +10,7 @@
 
 ## Mixie Architecture
 
-* All of Mixie's code has been written into one single file.  
-  While I agree that this is a bad coding practice, I want it to be portable  
-  A single file for the program and another one for the data is the cleanest thing I can think of  
-
-* The `Mixie` class handles all logic for processing data.  
+* The `Mixie` class handles all central logic.  
 * `MixieController` classes contain functionality for users to access Mixie  
   As of now only a CLI Controller exists  
   This controller is passed to the Mixie and FileManager classes so any user interaction required would get directed to the controller.
@@ -35,3 +31,29 @@
   Initialization of `FileManager` triggers the file checks and DB initialization if it's the first time using `Mixie`.  
   All data are saved to the users root directory: this is for use in windows, *a linux implementation is required*.
 * Finally the main method of the Controller is called, this handles all user interaction.
+
+## History
+
+* This was a batch file in the beginning, that simply loaded folders in my collection to [VLC](https://www.videolan.org/vlc/)
+* Next, a python file tried to do the same thing a bit more intelligently by saving string `tags` into the comment metadata on audio files.  
+  These tags are then used to fetch the playlist.  
+  This was tedious and prone to errors.  
+
+  The python script was loading the entire playlist to [VLC](https://www.videolan.org/vlc/) in a single command. This introduced constraints as command prompt had a character limit.  
+  This issue was solved by letting the script append each track to the playlist one by one.  
+
+  This was still not so convenient because the script had to load up all the songs in the library on startup, which caused delays.
+* The next version used a python dictionary to map tags and tracks.  
+  This is way faster as it only has to load a single dictionary db and does not have to deal with singular file saves.  
+  The dictionary is saved as a text file. This was not be an optimum strategy but was left as a concern for later.  
+  > Using [pickle](https://docs.python.org/3/library/pickle.html) to handle the db saves was also a possible option.  
+* The current architecture is more modular, It contains  
+  * `FileManager` abstraction to handle db I/O  
+  * a dictionary like before to cache all data before transport to file  
+  * a Controller that handles all user interaction
+  * and the `Mixie` which processes all core logic  
+
+  This helped seperate the logic involved for different concerns  
+  Tests were also added to make sure other changes didn't break anything  
+  A bat script was also added to compile the python scripts into a single executable  
+  

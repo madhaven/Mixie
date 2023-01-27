@@ -55,7 +55,7 @@ class InitializationTest(TestCase):
         self.assertEqual(latestFiler.filerID(), filerInDB, "The latest Filer is not saved in the DB")
     
     def test_filesInLibraryFetched(self):
-        testFileName = 'testfileName'
+        testFileName = 'testfilename'
         filer = FileManager.getInstance(DummyController(), self.testDB)
         for x in range(3):
             file = open('%s%d.mp3'%(testFileName, x), 'w')
@@ -66,7 +66,7 @@ class InitializationTest(TestCase):
         for x in range(3):
             os.remove('%s%d.mp3'%(testFileName, x))
 
-        self.assertEquals(files, {'.%s%s%d.mp3'%(os.sep, testFileName, x) for x in range(3)}, 'Files in library not fetched')
+        self.assertSetEqual(files, {'.%s%s%d.mp3'%(os.sep, testFileName, x) for x in range(3)}, 'Files in library not fetched')
 
     def test_singletonFiler(self):
         instance1 = FileManager.getInstance(DummyController(), self.testDB)

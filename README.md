@@ -45,26 +45,3 @@ Use these commands to control your Mixie.
 ## Contribute to Mixie
 
 Visit the [CONTRIBUTING.md](./CONTRIBUTING.md) documentation to learn how to contribute to the project.
-
-## History
-
-* This was a batch file in the beginning, that simply loaded folders in my collection to [VLC](https://www.videolan.org/vlc/)
-* Next, a python file tried to do the same thing a bit more intelligently by saving string `tags` into the comment metadata on audio files.  
-  These tags are then used to fetch the playlist.  
-  This was tedious and prone to errors.  
-
-  The python script was loading the entire playlist to [VLC](https://www.videolan.org/vlc/) in a single command. This introduced constraints as command prompt had a character limit.  
-  This issue was solved by letting the script append each track to the playlist one by one.  
-
-  This was still not so convenient because the script had to load up all the songs in the library on startup, that introduced delays.
-* The next version used a python dictionary to map tags and tracks.  
-  This is way faster as it only has to load a single dictionary db and does not have to deal with singular file saves.  
-  The dictionary is saved as a text file. This might not be an optimum strategy but is left as a concern for later.  
-  > Using [pickle](https://docs.python.org/3/library/pickle.html) to handle the db saves is a possible option.  
-* The current architecture is more modular, It contains  
-  * `FileManager` abstraction to handle file I/O  
-  * a dictionary like before to cache all data before transport to file  
-  * a Controller that handles all user interaction
-  * and the `Mixie` which processes all core logic  
-
-  The separate classes help to handle diverse actions while keeping update impact minimal  

@@ -142,12 +142,15 @@ class CLIController(BaseController):
         if badTags and 'no' not in input('\n%d tracks were not found in library, Fix them now ? '%len(badTags)).lower():
             print('\nDrag-n-drop new file to update track location\nPress return to forget the track\nPress Ctrl+C to exit')
             try:
-                for i, track in enumerate(badTags):
-                    print('%5.2f%% %s'%((i+1)*100/len(badTags), track))
+                for i, oldTrack in enumerate(badTags):
+                    print('%5.2f%% %s'%((i+1)*100/len(badTags), oldTrack))
                     newTrack = input('drop new track : ')
+                    if not newTrack:
+                        self.mixie.forgetTrack(oldTrack)
+                        continue
                     if newTrack[0] == '"' == newTrack[-1]:
                         newTrack = newTrack[1:-1]
-                    self.mixie.replaceTrack(track, newTrack)
+                    self.mixie.replaceTrack(oldTrack, newTrack)
             except Exception as e: Mixie.log(e)
             except: pass
             finally: print('ReTracking Terminated')
