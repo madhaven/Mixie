@@ -18,7 +18,7 @@ input('File contents read completed')
 
 con = sql.connect('new.db')
 cur = con.cursor()
-cur.execute("CREATE TABLE IF NOT EXISTS song(id integer primary key, location VARCHAR, songname VARCHAR)")
+cur.execute("CREATE TABLE IF NOT EXISTS song(id integer primary key, location TEXT COLLATE NOCASE, songname TEXT COLLATE NOCASE)")
 cur.execute("CREATE TABLE IF NOT EXISTS tag(id integer primary key, tagname VARCHAR)")
 cur.execute("CREATE TABLE IF NOT EXISTS link(songid integer, tagid integer)")
 for track in TAG_DB:
