@@ -12,7 +12,7 @@ def log(*args, wait=False, **kwargs):
 
 class Mixie:
     '''contains the logic to handle processes'''
-    VERSION = '6.1.0 fileSplit'
+    VERSION = '6.1.1 retagable'
 
     def __init__(self, controller:BaseController, fileManager:"FileManager"):
         '''attaches the instance of Mixie to the controller and acquires an instance of the fileManager'''

@@ -11,7 +11,7 @@ class FileManager:
     filers = None
     latestFiler:"FileManager" = None
 
-    qGetValue = "SELECT value FROM core WHERE key=?"
+    qGetValueOfKey = "SELECT value FROM core WHERE key=?"
     qCoreInit = "CREATE TABLE IF NOT EXISTS core(key VARCHAR UNIQUE, value VARCHAR)"
     qCoreInsert = "INSERT INTO core(key, value) VALUES(?, ?)"
 
@@ -53,7 +53,7 @@ class FileManager:
     @classmethod
     def initializeFiles(cls, libraryLocation:str, MIXIEDB:str, useFiler:"FileManager"=None):
         '''sets up the core table of the db with basic information
-        useFiler forces the usage of a specific FileManager instead of the latest available
+        useFiler specifies a certain FileManager to be used instead of the latest available
         '''
 
         con = sql.connect(MIXIEDB)
@@ -76,9 +76,10 @@ class FileManager:
         if not MIXIEDB or not os.path.isfile(MIXIEDB):
             cls.initializeFiles(controller.getLibrary(), MIXIEDB, useFiler)
 
+        # Find apt FileManager for DB
         con = sql.connect(MIXIEDB)
         cur = con.cursor()
-        cur.execute(cls.qGetValue, ('FileManagerStandard',))
+        cur.execute(cls.qGetValueOfKey, ('FileManagerStandard',))
         res = cur.fetchone()
         if not res:
             con.close()
@@ -94,7 +95,8 @@ class FileManager:
             Mixie.log('handle file read errors 2')
             exit() # TODO: handle file read errors
 
-        cur.execute(cls.qGetValue, ('Library',))
+        # Find Library location
+        cur.execute(cls.qGetValueOfKey, ('Library',))
         res = cur.fetchone()
         con.commit()
         con.close()
@@ -129,22 +131,22 @@ class BabyFileManager(FileManager):
         self.prepDB(con, cur)
         con.close()
     
-    @staticmethod
-    def filerID():
-        return 'BabyFileManager'
-    
-    def prepDB(self, con:sql.Connection, cur:sql.Cursor):
-        '''initialize DB'''
-        cur.execute(self.qCreateSongTable)
-        cur.execute(self.qCreateTagTable)
-        cur.execute(self.qCreateLinkTable)
-        con.commit()
-    
     def _connect_(self):
         '''Sets up the db if not used and returns the Connection and Cursor for operations'''
         con:sql.Connection = sql.connect(self.dbFile)
         cur = con.cursor()
         return con, cur
+
+    @staticmethod
+    def filerID():
+        return 'BabyFileManager'
+    
+    def prepDB(self, con:sql.Connection, cur:sql.Cursor):
+        '''initialize DB tables'''
+        cur.execute(self.qCreateSongTable)
+        cur.execute(self.qCreateTagTable)
+        cur.execute(self.qCreateLinkTable)
+        con.commit()
 
     def loadDB(self) -> dict:
         '''reads the db and returns the resultant dictionary'''
@@ -168,33 +170,27 @@ class BabyFileManager(FileManager):
     def saveDB(self, betaCache:dict) -> None: # TODO optimize
         '''saves the provided dictionary cache to the file after finding the delta'''
 
-        alphaCache = self.loadDB()
-        filesToRemove = set(alphaCache) - set(betaCache)
-        deltaCache = dict()
-        for id in betaCache:
-            if id in alphaCache:
-                if alphaCache[id] != betaCache[id]:
-                    deltaCache[id] = betaCache[id]
-            else:
-                deltaCache[id] = betaCache[id]
-        # TODO: what's teh poitn of this ?
+        oldDb = self.loadDB()
+        filesToRemove = set(oldDb) - set(betaCache)
+        deltaCache = { x: betaCache[x] for x in filter(
+            lambda id: id not in oldDb or oldDb[id]!=betaCache[id], 
+            betaCache
+        )}
 
         con, cur = self._connect_()
-        for id in deltaCache:
-            id:str
-            # find song id or insert new song
-            track = id[id.rfind(os.sep) + 1:]
-            location = id[:id.rfind(os.sep) + 1]
-            cur.execute(self.qFetchSongId, (location, track))
-            trackId = cur.fetchone()
-            if not trackId:
-                cur.execute(self.qInsertSong, (location, track))
+        for track in deltaCache:
+            filename = track[track.rfind(os.sep) + 1:]
+            location = track[:track.rfind(os.sep) + 1]
+            
+            if track not in oldDb:
+                cur.execute(self.qInsertSong, (location, filename))
                 trackId = cur.lastrowid
             else:
-                trackId = trackId[0]
+                cur.execute(self.qFetchSongId, (location, filename))
+                trackId = cur.fetchone()[0]
                 cur.execute(self.qDelLinks, (trackId,))
 
-            for tag in deltaCache[id]:
+            for tag in deltaCache[track]:
                 # find tagid or insert new tag
                 cur.execute(self.qFetchTagId, (tag,))
                 tagid = cur.fetchone()
@@ -205,15 +201,21 @@ class BabyFileManager(FileManager):
                     tagid = cur.lastrowid
                 cur.execute(self.qInsertLink, (trackId, tagid))
         
-        for id in filesToRemove:
-            track = id[id.rfind(os.sep) + 1:]
-            location = id[:id.rfind(os.sep) + 1]
-            cur.execute(self.qDelSong, (location, track))
+        # remove files from old db
+        for track in filesToRemove:
+            filename = track[track.rfind(os.sep) + 1:]
+            location = track[:track.rfind(os.sep) + 1]
+            cur.execute(self.qFetchSongId, (location, filename))
+            trackId = cur.fetchone()[0]
+            cur.execute(self.qDelSong, (location, filename))
+            cur.execute(self.qDelLinks, (trackId,))
+        
+        # TODO: remove tags not used anymore
         
         con.commit()
         con.close()
         Mixie.log('tagDb saved')
 
-#REGISTER SUBCLASSES HERE, LATEST LAST ORDER
+# REGISTER SUBCLASSES HERE, LATEST LAST ORDER
 FileManager.filers = [BabyFileManager]
 FileManager.latestFiler = FileManager.filers[-1]
