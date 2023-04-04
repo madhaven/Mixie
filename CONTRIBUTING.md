@@ -5,6 +5,7 @@
 * Get started by Cloning the repository or creating your own fork of the project  
 * Refer below to understand the Mixie architecture  
 * Refer the issues section to checkout Pending issues and features  
+  `TODO` tags left in code can also show work that is pending  
 * Make your changes on a new branch, preferably named `ft_<yourFeature>`  
 * Create your Pull Request explaining the changes you've made if it requires an explanation
 

@@ -14,7 +14,7 @@ class MediaManager(): # TODO
     
     @abstractmethod
     def previewTrack(self, track):
-        raise NotImplementedError
+        raise NotImplementedError # TODO
     
     def __init__(self, *args):
-        raise NotImplementedError
+        raise NotImplementedError # TODO
