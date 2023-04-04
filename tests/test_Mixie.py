@@ -303,6 +303,50 @@ class MixieTests(TestCase):
             os.remove('.%ssample%d.mp3'%(os.sep, x+1))
         self.assertListEqual(badFiles, ['.%ssample3.mp3'%os.sep], 'Scan returned wrong result')
     
+    def test_tag(self):
+        self.controller:BaseController = DummyCLIController()
+        self.filer:DummyFiler = FileManager.getInstance(self.controller, self.testDB, DummyFiler)
+        cache, files = {
+            os.sep.join(['.', 'sample1.mp3']): {'a',},
+            os.sep.join(['.', 'sample2.mp3']): {'a', 'b'},
+            os.sep.join(['.', 'sample3.mp3']): {'b', 'c'},
+        }, {
+            os.sep.join(['.', 'sample1.mp3']),
+            os.sep.join(['.', 'sample2.mp3']),
+            os.sep.join(['.', 'sample3.mp3']),
+        }
+        self.filer.theinit(cache, files)
+        self.mixie:Mixie = Mixie(self.controller, self.filer)
+
+        self.mixie.tag(os.path.join('.', 'sample2.mp3'), {'x', 'y'})
+        self.assertDictEqual(self.mixie.dbCache, {
+            os.sep.join(['.', 'sample1.mp3']): {'a',},
+            os.sep.join(['.', 'sample2.mp3']): {'x', 'y'},
+            os.sep.join(['.', 'sample3.mp3']): {'b', 'c'},
+        })
+    
+    def test_tagKeepOld(self):
+        self.controller:BaseController = DummyCLIController()
+        self.filer:DummyFiler = FileManager.getInstance(self.controller, self.testDB, DummyFiler)
+        cache, files = {
+            os.sep.join(['.', 'sample1.mp3']): {'a',},
+            os.sep.join(['.', 'sample2.mp3']): {'a', 'b'},
+            os.sep.join(['.', 'sample3.mp3']): {'b', 'c'},
+        }, {
+            os.sep.join(['.', 'sample1.mp3']),
+            os.sep.join(['.', 'sample2.mp3']),
+            os.sep.join(['.', 'sample3.mp3']),
+        }
+        self.filer.theinit(cache, files)
+        self.mixie:Mixie = Mixie(self.controller, self.filer)
+
+        self.mixie.tag(os.path.join('.', 'sample2.mp3'), {'x', 'y'}, keepOldTag=True)
+        self.assertDictEqual(self.mixie.dbCache, {
+            os.sep.join(['.', 'sample1.mp3']): {'a',},
+            os.sep.join(['.', 'sample2.mp3']): {'a', 'b', 'x', 'y'},
+            os.sep.join(['.', 'sample3.mp3']): {'b', 'c'},
+        })
+
     def test_replaceTrack(self):
         self.controller:BaseController = DummyCLIController()
         self.filer:DummyFiler = FileManager.getInstance(self.controller, self.testDB, DummyFiler)

@@ -3,6 +3,7 @@ from FileManager import BabyFileManager, FileManager
 import sqlite3 as sql
 from os import sep, path, remove
 from Controllers import BaseController, CLIController
+from random import randint
 
 
 class DummyCLIController(CLIController):
@@ -13,11 +14,14 @@ class BabyFileManagerTests(TestCase):
     testDB = 'test_testDB_1323.db'
     testLib = '.'
 
-    @classmethod
-    def tearDownClass(cls) -> None:
-        if path.isfile(cls.testDB):
-            remove(cls.testDB)
-        return super().tearDownClass()
+    def setUp(self):
+        self.testDB = 'test_testDB_%d.db'%randint(0, 9999)
+        return super().setUp()
+    
+    def tearDown(self):
+        if path.isfile(self.testDB):
+            remove(self.testDB)
+        return super().tearDown()
 
     def test_properIDReturned(self):
         filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
@@ -65,25 +69,18 @@ class BabyFileManagerTests(TestCase):
         self.assertDictEqual(d1, d2, 'DB not loaded properly')
 
     def test_saveDB(self):
-        filer = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
-        con = sql.connect(self.testDB)
-        cur = con.cursor()
-        cur.execute(filer.qCreateSongTable)
-        cur.execute(filer.qCreateLinkTable)
-        cur.execute(filer.qCreateTagTable)
-        con.commit()
-        con.close()
-
-        d = {
+        if path.isfile(self.testDB):
+            remove(self.testDB)
+        filer:BabyFileManager = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
+        filer.saveDB({
             sep.join(['.', 'sample.mp3']): {'happy',},
             sep.join(['.', 'sample2.mp3']): {'happy', 'crazy'}
-        }
-        filer.saveDB(d)
+        })
 
         con = sql.connect(self.testDB)
         cur = con.cursor()
         cur.execute("SELECT * FROM song")
-        dbSongs = set(cur.fetchall())
+        songs = set(cur.fetchall())
         cur.execute("SELECT * FROM tag")
         tags = set(cur.fetchall())
         cur.execute("SELECT * from link")
@@ -92,16 +89,90 @@ class BabyFileManagerTests(TestCase):
         if path.isfile(self.testDB):
             remove(self.testDB)
 
-        self.assertEquals(dbSongs, {
+        self.assertSetEqual(songs, {
             (1, '.' + sep, 'sample.mp3'),
             (2, '.' + sep, 'sample2.mp3')
         }, 'DB not saved properly')
-        self.assertEquals(tags, {
+        self.assertSetEqual(tags, {
             (1, 'happy'),
             (2, 'crazy')
         }, 'DB not saved properly')
-        self.assertEquals(links, {
+        self.assertSetEqual(links, {
             (1, 1),
             (2, 1),
             (2, 2)
+        }, 'DB not saved properly')
+    
+    def test_saveDB2(self):
+        if path.isfile(self.testDB):
+            remove(self.testDB)
+        filer:BabyFileManager = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
+        filer.saveDB({
+            sep.join(['.', 'sample.mp3']): {'happy',},
+            sep.join(['.', 'sample2.mp3']): {'happy', 'crazy'}
+        })
+        filer.saveDB({
+            sep.join(['.', 'sample.mp3']): {'happy',},
+            sep.join(['.', 'sample2.mp3']): {'sad',}
+        })
+
+        con = sql.connect(self.testDB)
+        cur = con.cursor()
+        cur.execute("SELECT * FROM song")
+        songs = set(cur.fetchall())
+        cur.execute("SELECT * FROM tag")
+        tags = set(cur.fetchall())
+        cur.execute("SELECT * from link")
+        links = set(cur.fetchall())
+        con.close()
+        if path.isfile(self.testDB):
+            remove(self.testDB)
+        
+        self.assertSetEqual(songs, {
+            (1, '.' + sep, 'sample.mp3'),
+            (2, '.' + sep, 'sample2.mp3')
+        }, 'DB not saved properly')
+        self.assertSetEqual(tags, {
+            (1, 'happy'),
+            (2, 'crazy'),
+            (3, 'sad')
+        }, 'DB not saved properly')
+        self.assertSetEqual(links, {
+            (1, 1),
+            (2, 3)
+        }, 'DB not saved properly')
+
+    def test_saveDB3(self):
+        if path.isfile(self.testDB):
+            remove(self.testDB)
+        filer:BabyFileManager = FileManager.getInstance(DummyCLIController(), self.testDB, BabyFileManager)
+        filer.saveDB({
+            sep.join(['.', 'sample.mp3']): {'happy',},
+            sep.join(['.', 'sample2.mp3']): {'happy', 'crazy'}
+        })
+        filer.saveDB({
+            sep.join(['.', 'sample.mp3']): {'happy',}
+        })
+
+        con = sql.connect(self.testDB)
+        cur = con.cursor()
+        cur.execute("SELECT * FROM song")
+        songs = set(cur.fetchall())
+        cur.execute("SELECT * FROM tag")
+        tags = set(cur.fetchall())
+        cur.execute("SELECT * from link")
+        links = set(cur.fetchall())
+        con.close()
+        if path.isfile(self.testDB):
+            remove(self.testDB)
+        
+        self.assertSetEqual(songs, {
+            (1, '.' + sep, 'sample.mp3'),
+        }, 'DB not saved properly')
+        self.assertSetEqual(tags, {
+            (1, 'happy'),
+            (2, 'crazy') # TODO: remove unused tags in saveDB()
+        }, 'DB not saved properly')
+        self.assertSetEqual(links, {
+            (1, 1),
         }, 'DB not saved properly')
