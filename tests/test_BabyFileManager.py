@@ -38,22 +38,22 @@ class BabyFileManagerTests(TestCase):
         cur.execute(BabyFileManager.qCreateLinkTable)
         cur.execute(BabyFileManager.qCreateTagTable)
 
-        cur.execute(BabyFileManager.qInsertSong, ('.'+sep, 'sample.mp3'))
-        cur.execute(BabyFileManager.qInsertTag, ('happy',))
-        cur.execute(BabyFileManager.qFetchSongId, ('.'+sep, 'sample.mp3'))
+        cur.execute(BabyFileManager.qPutSong, ('.'+sep, 'sample.mp3'))
+        cur.execute(BabyFileManager.qPutTag, ('happy',))
+        cur.execute(BabyFileManager.qGetSongId, ('.'+sep, 'sample.mp3'))
         songid = cur.fetchone()[0]
-        cur.execute(BabyFileManager.qFetchTagId, ('happy',))
+        cur.execute(BabyFileManager.qGetTagId, ('happy',))
         happyTagId = cur.fetchone()[0]
-        cur.execute(BabyFileManager.qInsertLink, (songid, happyTagId))
+        cur.execute(BabyFileManager.qPutLink, (songid, happyTagId))
 
-        cur.execute(BabyFileManager.qInsertSong, ('.'+sep, 'sample2.mp3'))
-        cur.execute(BabyFileManager.qInsertTag, ('crazy',))
-        cur.execute(BabyFileManager.qFetchSongId, ('.'+sep, 'sample2.mp3'))
+        cur.execute(BabyFileManager.qPutSong, ('.'+sep, 'sample2.mp3'))
+        cur.execute(BabyFileManager.qPutTag, ('crazy',))
+        cur.execute(BabyFileManager.qGetSongId, ('.'+sep, 'sample2.mp3'))
         songid = cur.fetchone()[0]
-        cur.execute(BabyFileManager.qFetchTagId, ('crazy',))
+        cur.execute(BabyFileManager.qGetTagId, ('crazy',))
         crazyTagId = cur.fetchone()[0]
-        cur.execute(BabyFileManager.qInsertLink, (songid, happyTagId))
-        cur.execute(BabyFileManager.qInsertLink, (songid, crazyTagId))
+        cur.execute(BabyFileManager.qPutLink, (songid, happyTagId))
+        cur.execute(BabyFileManager.qPutLink, (songid, crazyTagId))
 
         con.commit()
         con.close()

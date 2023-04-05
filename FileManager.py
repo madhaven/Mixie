@@ -116,14 +116,15 @@ class FileManager:
 class BabyFileManager(FileManager):
     qDelLinks = '''DELETE FROM link WHERE songid=?'''
     qDelSong = '''DELETE FROM song WHERE location=? and songname=?'''
-    qFetchSongId = '''SELECT id FROM song WHERE location=? and songname=?'''
-    qInsertSong = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
-    qFetchTagId = '''SELECT id FROM tag WHERE tagname=?'''
-    qInsertTag = '''INSERT INTO tag(tagname) VALUES (?)'''
-    qInsertLink = '''INSERT INTO link(songid, tagid) VALUES (?, ?)'''
+    qGetSongId = '''SELECT id FROM song WHERE location=? and songname=?'''
+    qPutSong = '''INSERT INTO song(location, songname) VALUES (?, ?)'''
+    qGetTagId = '''SELECT id FROM tag WHERE tagname=?'''
+    qPutTag = '''INSERT INTO tag(tagname) VALUES (?)'''
+    qPutLink = '''INSERT INTO link(songid, tagid) VALUES (?, ?)'''
     qCreateSongTable = '''CREATE TABLE IF NOT EXISTS song(id INTEGER PRIMARY KEY, location TEXT COLLATE NOCASE, songname TEXT COLLATE NOCASE)'''
     qCreateTagTable = '''CREATE TABLE IF NOT EXISTS tag(id INTEGER PRIMARY KEY, tagname TEXT)'''
     qCreateLinkTable = '''CREATE TABLE IF NOT EXISTS link(songid, tagid)'''
+    qGetDuplicateSongs = '''SELECT a.id aid, a.songname aname, b.id bid, b.songname bname from song a INNER JOIN song b on LOWER(a.songname)=LOWER(b.songname) where a.id <> b.id'''
 
     def __init__(self, dbLocation, libraryLocation):
         super().__init__(dbLocation, libraryLocation)
@@ -183,29 +184,29 @@ class BabyFileManager(FileManager):
             location = track[:track.rfind(os.sep) + 1]
             
             if track not in oldDb:
-                cur.execute(self.qInsertSong, (location, filename))
+                cur.execute(self.qPutSong, (location, filename))
                 trackId = cur.lastrowid
             else:
-                cur.execute(self.qFetchSongId, (location, filename))
+                cur.execute(self.qGetSongId, (location, filename))
                 trackId = cur.fetchone()[0]
                 cur.execute(self.qDelLinks, (trackId,))
 
             for tag in deltaCache[track]:
                 # find tagid or insert new tag
-                cur.execute(self.qFetchTagId, (tag,))
+                cur.execute(self.qGetTagId, (tag,))
                 tagid = cur.fetchone()
                 if tagid:
                     tagid = tagid[0]
                 else:
-                    cur.execute(self.qInsertTag, (tag,))
+                    cur.execute(self.qPutTag, (tag,))
                     tagid = cur.lastrowid
-                cur.execute(self.qInsertLink, (trackId, tagid))
+                cur.execute(self.qPutLink, (trackId, tagid))
         
         # remove files from old db
         for track in filesToRemove:
             filename = track[track.rfind(os.sep) + 1:]
             location = track[:track.rfind(os.sep) + 1]
-            cur.execute(self.qFetchSongId, (location, filename))
+            cur.execute(self.qGetSongId, (location, filename))
             trackId = cur.fetchone()[0]
             cur.execute(self.qDelSong, (location, filename))
             cur.execute(self.qDelLinks, (trackId,))
