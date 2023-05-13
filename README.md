@@ -42,6 +42,11 @@ Use these commands to control your Mixie.
 > mixie alltags
 > ```
 
+## How to Build
+
+Mixie uses the library `pyinstaller` to build the python code into an executable  
+Run the `build.bat` script to build the script.
+
 ## Contribute to Mixie
 
 Visit the [CONTRIBUTING.md](./CONTRIBUTING.md) documentation to learn how to contribute to the project.
